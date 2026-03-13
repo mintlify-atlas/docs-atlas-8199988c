@@ -1,0 +1,106 @@
+{
+  "projectType": "sdk-library",
+  "projectName": "OpenCode Kiro Auth",
+  "projectDescription": "OpenCode plugin for AWS Kiro providing access to Claude models with multi-account rotation and intelligent quota management.",
+  "theme": "aspen",
+  "primaryColor": "#94cb04",
+  "lightColor": "#545454",
+  "darkColor": null,
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "installation",
+              "quickstart"
+            ]
+          },
+          {
+            "group": "Authentication",
+            "pages": [
+              "auth/aws-builder-id",
+              "auth/iam-identity-center",
+              "auth/kiro-cli-sync"
+            ]
+          },
+          {
+            "group": "Configuration",
+            "pages": [
+              "config/overview",
+              "config/account-strategies",
+              "config/advanced-options"
+            ]
+          },
+          {
+            "group": "Guides",
+            "pages": [
+              "guides/model-configuration",
+              "guides/multi-account-setup",
+              "guides/local-development"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Core",
+            "pages": [
+              "api/plugin",
+              "api/types"
+            ]
+          },
+          {
+            "group": "Authentication",
+            "pages": [
+              "api/auth/authorize-kiro-idc"
+            ]
+          },
+          {
+            "group": "Configuration",
+            "pages": [
+              "api/config/kiro-config"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Troubleshooting",
+        "groups": [
+          {
+            "group": "Common Issues",
+            "pages": [
+              "troubleshooting/access-denied",
+              "troubleshooting/no-accounts",
+              "troubleshooting/invalid-url",
+              "troubleshooting/oauth-flow"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Multiple authentication methods (AWS Builder ID, IAM Identity Center, Kiro CLI sync)",
+    "Intelligent multi-account rotation with quota management",
+    "Automatic token refresh and recovery",
+    "Support for Claude models including thinking modes",
+    "Gradual context truncation for error handling",
+    "High-performance SQLite storage"
+  ],
+  "publicApiSurface": [
+    "KiroOAuthPlugin",
+    "createKiroPlugin",
+    "authorizeKiroIDC",
+    "KiroAuthDetails",
+    "KiroAuthMethod",
+    "KiroRegion",
+    "ManagedAccount",
+    "KiroConfig"
+  ]
+}
