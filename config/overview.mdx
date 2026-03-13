@@ -1,0 +1,248 @@
+---
+title: "Configuration Overview"
+description: "Learn how to configure the OpenCode Kiro Auth plugin for optimal performance and authentication"
+---
+
+The OpenCode Kiro Auth plugin provides extensive configuration options to customize authentication behavior, account management, and API request handling. Configuration can be set at multiple levels with a clear precedence hierarchy.
+
+## Configuration Locations
+
+The plugin supports three configuration sources, applied in order of precedence:
+
+<Steps>
+  <Step title="Default Configuration">
+    Built-in defaults provide sensible values for all options. The plugin works out-of-the-box without any configuration.
+  </Step>
+  
+  <Step title="User Configuration">
+    Global user settings apply across all projects.
+    
+    **Linux/macOS:** `~/.config/opencode/kiro.json`
+    
+    **Windows:** `%APPDATA%\opencode\kiro.json`
+  </Step>
+  
+  <Step title="Project Configuration">
+    Project-specific settings override user configuration.
+    
+    **Location:** `<project-root>/.opencode/kiro.json`
+  </Step>
+  
+  <Step title="Environment Variables">
+    Environment variables provide the highest precedence and override all file-based configuration.
+  </Step>
+</Steps>
+
+<Info>
+The plugin automatically creates a default configuration template at `~/.config/opencode/kiro.json` on first run.
+</Info>
+
+## Configuration Structure
+
+The configuration file uses JSON format with the following structure:
+
+<CodeGroup>
+```json kiro.json
+{
+  "auto_sync_kiro_cli": true,
+  "account_selection_strategy": "lowest-usage",
+  "default_region": "us-east-1",
+  "idc_start_url": "https://your-company.awsapps.com/start",
+  "idc_region": "us-east-1",
+  "rate_limit_retry_delay_ms": 5000,
+  "rate_limit_max_retries": 3,
+  "max_request_iterations": 20,
+  "request_timeout_ms": 120000,
+  "token_expiry_buffer_ms": 300000,
+  "usage_sync_max_retries": 3,
+  "usage_tracking_enabled": true,
+  "enable_log_api_request": false
+}
+```
+
+```json Minimal Configuration
+{
+  "idc_start_url": "https://your-company.awsapps.com/start"
+}
+```
+
+```json Multi-Account Setup
+{
+  "auto_sync_kiro_cli": true,
+  "account_selection_strategy": "lowest-usage",
+  "usage_tracking_enabled": true
+}
+```
+</CodeGroup>
+
+## Configuration Categories
+
+Configuration options are organized into functional categories:
+
+<Accordion title="Authentication Settings">
+  Controls how the plugin authenticates with AWS services.
+  
+  - `idc_start_url` - IAM Identity Center Start URL
+  - `idc_region` - IAM Identity Center region
+  - `idc_profile_arn` - Profile ARN for IAM Identity Center
+  - `auto_sync_kiro_cli` - Automatic session import from Kiro CLI
+  - `default_region` - Default AWS region for API requests
+</Accordion>
+
+<Accordion title="Account Management">
+  Configures multi-account behavior and selection strategies.
+  
+  - `account_selection_strategy` - How accounts are selected for requests
+  - `usage_tracking_enabled` - Track and display usage metrics
+</Accordion>
+
+<Accordion title="Request Handling">
+  Fine-tune API request behavior and retry logic.
+  
+  - `rate_limit_retry_delay_ms` - Delay between rate limit retries
+  - `rate_limit_max_retries` - Maximum retry attempts
+  - `max_request_iterations` - Maximum request loop iterations
+  - `request_timeout_ms` - Request timeout duration
+  - `usage_sync_max_retries` - Retry attempts for usage sync
+</Accordion>
+
+<Accordion title="Token Management">
+  Controls token refresh and expiration handling.
+  
+  - `token_expiry_buffer_ms` - Buffer time before token expiration
+</Accordion>
+
+<Accordion title="Debugging">
+  Enable detailed logging and diagnostics.
+  
+  - `enable_log_api_request` - Log detailed API request information
+</Accordion>
+
+## Environment Variable Configuration
+
+All configuration options can be set via environment variables with the `KIRO_` prefix:
+
+<CodeGroup>
+```bash Linux/macOS
+export KIRO_ACCOUNT_SELECTION_STRATEGY="lowest-usage"
+export KIRO_DEFAULT_REGION="us-east-1"
+export KIRO_RATE_LIMIT_RETRY_DELAY_MS=5000
+export KIRO_USAGE_TRACKING_ENABLED=true
+```
+
+```powershell Windows PowerShell
+$env:KIRO_ACCOUNT_SELECTION_STRATEGY="lowest-usage"
+$env:KIRO_DEFAULT_REGION="us-east-1"
+$env:KIRO_RATE_LIMIT_RETRY_DELAY_MS=5000
+$env:KIRO_USAGE_TRACKING_ENABLED="true"
+```
+
+```cmd Windows CMD
+set KIRO_ACCOUNT_SELECTION_STRATEGY=lowest-usage
+set KIRO_DEFAULT_REGION=us-east-1
+set KIRO_RATE_LIMIT_RETRY_DELAY_MS=5000
+set KIRO_USAGE_TRACKING_ENABLED=true
+```
+</CodeGroup>
+
+### Environment Variable Mapping
+
+| Configuration Key | Environment Variable |
+|-------------------|----------------------|
+| `account_selection_strategy` | `KIRO_ACCOUNT_SELECTION_STRATEGY` |
+| `default_region` | `KIRO_DEFAULT_REGION` |
+| `rate_limit_retry_delay_ms` | `KIRO_RATE_LIMIT_RETRY_DELAY_MS` |
+| `rate_limit_max_retries` | `KIRO_RATE_LIMIT_MAX_RETRIES` |
+| `max_request_iterations` | `KIRO_MAX_REQUEST_ITERATIONS` |
+| `request_timeout_ms` | `KIRO_REQUEST_TIMEOUT_MS` |
+| `token_expiry_buffer_ms` | `KIRO_TOKEN_EXPIRY_BUFFER_MS` |
+| `usage_sync_max_retries` | `KIRO_USAGE_SYNC_MAX_RETRIES` |
+| `usage_tracking_enabled` | `KIRO_USAGE_TRACKING_ENABLED` |
+| `enable_log_api_request` | `KIRO_ENABLE_LOG_API_REQUEST` |
+| `auth_server_port_start` | `KIRO_AUTH_SERVER_PORT_START` |
+| `auth_server_port_range` | `KIRO_AUTH_SERVER_PORT_RANGE` |
+
+<Note>
+Boolean environment variables accept `1`, `true`, `0`, or `false` as values.
+</Note>
+
+## Configuration Validation
+
+The plugin validates all configuration values against a strict schema:
+
+- **Type checking** - Ensures values match expected types (string, number, boolean)
+- **Range validation** - Numbers must be within acceptable ranges
+- **Enum validation** - String values must match allowed options
+- **URL validation** - URLs must be properly formatted
+
+<Warning>
+Invalid configuration values will trigger warnings in the logs and fall back to default values. Check logs if your configuration isn't being applied.
+</Warning>
+
+## Quick Start Examples
+
+### AWS Builder ID (Default)
+
+No configuration needed - just run `opencode auth login` and select Kiro:
+
+```json kiro.json
+{}
+```
+
+### IAM Identity Center (SSO)
+
+Configure your organization's Start URL:
+
+```json kiro.json
+{
+  "idc_start_url": "https://your-company.awsapps.com/start",
+  "idc_region": "us-east-1"
+}
+```
+
+### Kiro CLI Auto-Sync
+
+Import sessions automatically from `kiro-cli`:
+
+```json kiro.json
+{
+  "auto_sync_kiro_cli": true
+}
+```
+
+### Multi-Account Optimization
+
+Optimize for multiple accounts with quota-aware rotation:
+
+```json kiro.json
+{
+  "account_selection_strategy": "lowest-usage",
+  "usage_tracking_enabled": true,
+  "rate_limit_max_retries": 5
+}
+```
+
+## Configuration Tips
+
+<Tip>
+**Start with defaults:** The plugin is optimized for common use cases. Only adjust configuration when you have specific needs.
+</Tip>
+
+<Tip>
+**Use project configs sparingly:** Project-level configuration is useful for team-wide settings, but can make troubleshooting harder. Document any project-specific overrides.
+</Tip>
+
+<Tip>
+**Enable logging for debugging:** Set `enable_log_api_request: true` when troubleshooting authentication or API issues, but disable it in production for performance.
+</Tip>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Account Strategies" icon="arrows-rotate" href="/config/account-strategies">
+    Learn about account selection strategies for multi-account setups
+  </Card>
+  <Card title="Advanced Options" icon="sliders" href="/config/advanced-options">
+    Explore advanced configuration for fine-tuned control
+  </Card>
+</CardGroup>

@@ -1,0 +1,380 @@
+---
+title: "Type Definitions"
+description: "TypeScript type definitions for Kiro Auth plugin"
+---
+
+## KiroAuthMethod
+
+Authentication method type for Kiro accounts.
+
+```typescript
+type KiroAuthMethod = 'idc' | 'desktop'
+```
+
+### Values
+
+- `'idc'` - AWS IAM Identity Center authentication
+- `'desktop'` - Desktop application authentication
+
+---
+
+## KiroRegion
+
+AWS region identifier for Kiro services.
+
+```typescript
+type KiroRegion = 
+  | 'us-east-1' | 'us-east-2' | 'us-west-1' | 'us-west-2'
+  | 'af-south-1'
+  | 'ap-east-1' | 'ap-east-2'
+  | 'ap-south-1' | 'ap-south-2'
+  | 'ap-northeast-1' | 'ap-northeast-2' | 'ap-northeast-3'
+  | 'ap-southeast-1' | 'ap-southeast-2' | 'ap-southeast-3' 
+  | 'ap-southeast-4' | 'ap-southeast-5' | 'ap-southeast-6' | 'ap-southeast-7'
+  | 'ca-central-1' | 'ca-west-1'
+  | 'eu-central-1' | 'eu-central-2'
+  | 'eu-north-1'
+  | 'eu-south-1' | 'eu-south-2'
+  | 'eu-west-1' | 'eu-west-2' | 'eu-west-3'
+  | 'il-central-1'
+  | 'mx-central-1'
+  | 'me-central-1' | 'me-south-1'
+  | 'sa-east-1'
+```
+
+### Usage
+
+```typescript
+import type { KiroRegion } from '@opencode/kiro-auth'
+
+const region: KiroRegion = 'us-east-1'
+```
+
+---
+
+## KiroAuthDetails
+
+Complete authentication details for a Kiro account.
+
+```typescript
+interface KiroAuthDetails {
+  refresh: string
+  access: string
+  expires: number
+  authMethod: KiroAuthMethod
+  region: KiroRegion
+  oidcRegion?: KiroRegion
+  clientId?: string
+  clientSecret?: string
+  email?: string
+  profileArn?: string
+}
+```
+
+### Fields
+
+<ResponseField name="refresh" type="string" required>
+  OAuth refresh token for obtaining new access tokens
+</ResponseField>
+
+<ResponseField name="access" type="string" required>
+  Current OAuth access token for API requests
+</ResponseField>
+
+<ResponseField name="expires" type="number" required>
+  Token expiration timestamp in milliseconds (Unix epoch)
+</ResponseField>
+
+<ResponseField name="authMethod" type="KiroAuthMethod" required>
+  Authentication method used (`'idc'` or `'desktop'`)
+</ResponseField>
+
+<ResponseField name="region" type="KiroRegion" required>
+  AWS region for API requests
+</ResponseField>
+
+<ResponseField name="oidcRegion" type="KiroRegion">
+  AWS region for OIDC endpoints (IDC only)
+</ResponseField>
+
+<ResponseField name="clientId" type="string">
+  OAuth client ID (IDC only)
+</ResponseField>
+
+<ResponseField name="clientSecret" type="string">
+  OAuth client secret (IDC only)
+</ResponseField>
+
+<ResponseField name="email" type="string">
+  User email address associated with the account
+</ResponseField>
+
+<ResponseField name="profileArn" type="string">
+  AWS IAM Identity Center profile ARN (IDC only)
+</ResponseField>
+
+---
+
+## ManagedAccount
+
+Complete account information including health status and usage metrics.
+
+```typescript
+interface ManagedAccount {
+  id: string
+  email: string
+  authMethod: KiroAuthMethod
+  region: KiroRegion
+  oidcRegion?: KiroRegion
+  clientId?: string
+  clientSecret?: string
+  profileArn?: string
+  startUrl?: string
+  refreshToken: string
+  accessToken: string
+  expiresAt: number
+  rateLimitResetTime: number
+  isHealthy: boolean
+  unhealthyReason?: string
+  recoveryTime?: number
+  failCount: number
+  usedCount?: number
+  limitCount?: number
+  lastSync?: number
+  lastUsed?: number
+}
+```
+
+### Authentication Fields
+
+<ResponseField name="id" type="string" required>
+  Unique identifier for the account
+</ResponseField>
+
+<ResponseField name="email" type="string" required>
+  User email address
+</ResponseField>
+
+<ResponseField name="authMethod" type="KiroAuthMethod" required>
+  Authentication method (`'idc'` or `'desktop'`)
+</ResponseField>
+
+<ResponseField name="region" type="KiroRegion" required>
+  Primary AWS region for API requests
+</ResponseField>
+
+<ResponseField name="oidcRegion" type="KiroRegion">
+  AWS region for OIDC endpoints (IDC only)
+</ResponseField>
+
+<ResponseField name="clientId" type="string">
+  OAuth client ID (IDC only)
+</ResponseField>
+
+<ResponseField name="clientSecret" type="string">
+  OAuth client secret (IDC only)
+</ResponseField>
+
+<ResponseField name="profileArn" type="string">
+  IAM Identity Center profile ARN (IDC only)
+</ResponseField>
+
+<ResponseField name="startUrl" type="string">
+  IDC start URL (IDC only)
+</ResponseField>
+
+### Token Fields
+
+<ResponseField name="refreshToken" type="string" required>
+  OAuth refresh token
+</ResponseField>
+
+<ResponseField name="accessToken" type="string" required>
+  Current OAuth access token
+</ResponseField>
+
+<ResponseField name="expiresAt" type="number" required>
+  Token expiration timestamp in milliseconds
+</ResponseField>
+
+### Health & Rate Limiting
+
+<ResponseField name="rateLimitResetTime" type="number" required>
+  Timestamp when rate limit resets (milliseconds)
+</ResponseField>
+
+<ResponseField name="isHealthy" type="boolean" required>
+  Whether the account is healthy and can be used
+</ResponseField>
+
+<ResponseField name="unhealthyReason" type="string">
+  Reason the account is unhealthy (if `isHealthy` is `false`)
+</ResponseField>
+
+<ResponseField name="recoveryTime" type="number">
+  Timestamp when the account can be retried (milliseconds)
+</ResponseField>
+
+<ResponseField name="failCount" type="number" required>
+  Number of consecutive failures
+</ResponseField>
+
+### Usage Tracking
+
+<ResponseField name="usedCount" type="number">
+  Number of requests used in the current period
+</ResponseField>
+
+<ResponseField name="limitCount" type="number">
+  Total request limit for the current period
+</ResponseField>
+
+<ResponseField name="lastSync" type="number">
+  Timestamp of last usage sync (milliseconds)
+</ResponseField>
+
+<ResponseField name="lastUsed" type="number">
+  Timestamp of last request (milliseconds)
+</ResponseField>
+
+---
+
+## KiroConfig
+
+Configuration options for the Kiro Auth plugin.
+
+```typescript
+interface KiroConfig {
+  $schema?: string
+  
+  // IDC Configuration
+  idc_start_url?: string
+  idc_region?: KiroRegion
+  idc_profile_arn?: string
+  
+  // Account Management
+  account_selection_strategy: 'sticky' | 'round-robin' | 'lowest-usage'
+  default_region: KiroRegion
+  
+  // Rate Limiting
+  rate_limit_retry_delay_ms: number
+  rate_limit_max_retries: number
+  
+  // Request Configuration
+  max_request_iterations: number
+  request_timeout_ms: number
+  token_expiry_buffer_ms: number
+  
+  // Usage Tracking
+  usage_sync_max_retries: number
+  usage_tracking_enabled: boolean
+  
+  // Authentication Server
+  auth_server_port_start: number
+  auth_server_port_range: number
+  
+  // Features
+  auto_sync_kiro_cli: boolean
+  enable_log_api_request: boolean
+}
+```
+
+### IDC Configuration
+
+<ParamField path="idc_start_url" type="string">
+  AWS IAM Identity Center start URL (e.g., `https://my-org.awsapps.com/start`)
+</ParamField>
+
+<ParamField path="idc_region" type="KiroRegion">
+  AWS region for IDC authentication
+</ParamField>
+
+<ParamField path="idc_profile_arn" type="string">
+  IAM Identity Center profile ARN
+</ParamField>
+
+### Account Management
+
+<ParamField path="account_selection_strategy" type="string" default="lowest-usage">
+  Strategy for selecting which account to use for requests:
+  - `'sticky'` - Use the same account for all requests
+  - `'round-robin'` - Rotate through accounts evenly
+  - `'lowest-usage'` - Use the account with the lowest usage
+</ParamField>
+
+<ParamField path="default_region" type="KiroRegion" default="us-east-1">
+  Default AWS region for API requests
+</ParamField>
+
+### Rate Limiting
+
+<ParamField path="rate_limit_retry_delay_ms" type="number" default="5000">
+  Delay in milliseconds before retrying after rate limit (1000-60000)
+</ParamField>
+
+<ParamField path="rate_limit_max_retries" type="number" default="3">
+  Maximum number of retries after rate limit (0-10)
+</ParamField>
+
+### Request Configuration
+
+<ParamField path="max_request_iterations" type="number" default="20">
+  Maximum number of streaming response iterations (5-1000)
+</ParamField>
+
+<ParamField path="request_timeout_ms" type="number" default="120000">
+  Request timeout in milliseconds (30000-600000)
+</ParamField>
+
+<ParamField path="token_expiry_buffer_ms" type="number" default="300000">
+  Buffer time before token expiry to trigger refresh (30000-300000)
+</ParamField>
+
+### Usage Tracking
+
+<ParamField path="usage_sync_max_retries" type="number" default="3">
+  Maximum retries for syncing usage data (0-5)
+</ParamField>
+
+<ParamField path="usage_tracking_enabled" type="boolean" default="true">
+  Whether to track and sync usage metrics
+</ParamField>
+
+### Authentication Server
+
+<ParamField path="auth_server_port_start" type="number" default="19847">
+  Starting port for local authentication server (1024-65535)
+</ParamField>
+
+<ParamField path="auth_server_port_range" type="number" default="10">
+  Number of ports to try for authentication server (1-100)
+</ParamField>
+
+### Features
+
+<ParamField path="auto_sync_kiro_cli" type="boolean" default="true">
+  Automatically sync accounts with Kiro CLI
+</ParamField>
+
+<ParamField path="enable_log_api_request" type="boolean" default="false">
+  Enable detailed logging of API requests (for debugging)
+</ParamField>
+
+### Usage
+
+Create a `kiro.config.json` file in your project root:
+
+```json
+{
+  "$schema": "https://opencode.ai/schemas/kiro.json",
+  "account_selection_strategy": "lowest-usage",
+  "default_region": "us-west-2",
+  "idc_start_url": "https://my-org.awsapps.com/start",
+  "idc_region": "us-east-1",
+  "usage_tracking_enabled": true
+}
+```
+
+<Note>
+All configuration fields are optional except those with default values. The plugin will use sensible defaults for any omitted fields.
+</Note>

@@ -1,0 +1,173 @@
+---
+title: "No Accounts Error"
+description: "Fix 'No accounts' error when the plugin cannot find authentication credentials"
+---
+
+The **"No accounts"** error occurs when the plugin has no authentication records in its database at `~/.config/opencode/kiro.db`. This prevents the plugin from making API requests to AWS Kiro services.
+
+## Error Message
+
+```
+Error: No accounts
+```
+
+This error typically appears when:
+- You haven't completed authentication setup
+- The plugin database is empty or corrupted
+- Kiro CLI sync failed or is disabled
+- You authenticated via Google/GitHub OAuth but OpenCode hasn't loaded the plugin yet
+
+## Solution for Kiro CLI Users
+
+If you've authenticated via `kiro-cli login`, follow these steps:
+
+<Steps>
+  <Step title="Verify Kiro CLI authentication">
+    Ensure your Kiro CLI session is active:
+    
+    ```bash
+    kiro-cli status
+    ```
+    
+    If not authenticated, run:
+    
+    ```bash
+    kiro-cli login
+    ```
+  </Step>
+  
+  <Step title="Enable auto-sync">
+    Check that auto-sync is enabled in `~/.config/opencode/kiro.json`:
+    
+    ```json
+    {
+      "auto_sync_kiro_cli": true
+    }
+    ```
+    
+    This setting allows the plugin to automatically import sessions from Kiro CLI.
+  </Step>
+  
+  <Step title="Trigger plugin reload">
+    The plugin will automatically attempt a Kiro CLI sync when it detects zero accounts. You can trigger this by:
+    
+    - Restarting OpenCode
+    - Making an API request (the sync will run automatically)
+    - Running `opencode auth login` to manually authenticate
+  </Step>
+</Steps>
+
+## Solution for Direct Authentication
+
+If you're not using Kiro CLI, authenticate directly through OpenCode:
+
+<Steps>
+  <Step title="Run authentication command">
+    ```bash
+    opencode auth login
+    ```
+  </Step>
+  
+  <Step title="Select Kiro provider">
+    - Select `Other`
+    - Type `kiro`
+    - Press enter
+  </Step>
+  
+  <Step title="Configure authentication method">
+    Choose your authentication method:
+    
+    - **AWS Builder ID**: Leave Start URL blank when prompted
+    - **IAM Identity Center**: Enter your company's Start URL (e.g., `https://your-company.awsapps.com/start`) and region
+  </Step>
+  
+  <Step title="Complete browser authorization">
+    A browser window will open to AWS verification URL. If it doesn't open automatically:
+    
+    1. Copy the URL printed by OpenCode
+    2. Open it in your browser
+    3. Enter the user code displayed in your terminal
+    4. Approve the authorization request
+  </Step>
+</Steps>
+
+## Google/GitHub OAuth Users
+
+If you authenticated via `kiro-cli login` using **Google or GitHub OAuth** (not AWS Builder ID or IAM Identity Center), the plugin's sync may not trigger automatically. This is a known limitation.
+
+<Warning>
+  OpenCode requires a `kiro` entry in `auth.json` before making API requests, but the plugin loader only runs when a request is made. This creates a chicken-and-egg problem for OAuth users.
+</Warning>
+
+### Workaround
+
+Add a minimal placeholder entry to `~/.local/share/opencode/auth.json`:
+
+```json
+{
+  "kiro": {
+    "type": "api",
+    "key": "placeholder"
+  }
+}
+```
+
+After adding this:
+
+1. OpenCode will treat the provider as connected
+2. The plugin loader will run on startup
+3. Kiro CLI sync will populate `kiro.db` with your actual tokens
+4. The placeholder values are **not** used for API calls
+
+<Info>
+  Ensure `auto_sync_kiro_cli` is `true` in `~/.config/opencode/kiro.json` and that `kiro-cli login` succeeds before applying this workaround.
+</Info>
+
+## Verification
+
+After completing authentication, verify that accounts were created:
+
+```bash
+sqlite3 ~/.config/opencode/kiro.db "SELECT email, auth_method, is_healthy FROM accounts;"
+```
+
+You should see at least one account record. If the table is empty, the authentication process did not complete successfully.
+
+## Database Location
+
+The plugin stores account information in platform-specific locations:
+
+- **Linux/macOS**: `~/.config/opencode/kiro.db`
+- **Windows**: `%APPDATA%\opencode\kiro.db`
+
+## Related Information
+
+<Accordion title="What does auto_sync_kiro_cli do?">
+  When enabled, the plugin automatically:
+  
+  1. Reads your Kiro CLI SQLite database at startup
+  2. Imports active sessions with tokens and OIDC credentials
+  3. Syncs profile ARN and device registration data
+  4. Updates account records when tokens are refreshed
+  
+  This allows seamless integration with Kiro CLI without manual token management.
+</Accordion>
+
+<Accordion title="Can I have accounts from both Kiro CLI and direct auth?">
+  Yes! The plugin supports multiple accounts from different sources:
+  
+  - Accounts imported from Kiro CLI via auto-sync
+  - Accounts created via `opencode auth login`
+  - Manual accounts configured in the database
+  
+  All accounts are stored in the same `kiro.db` database and managed by the plugin's account rotation system.
+</Accordion>
+
+<Accordion title="What if my Kiro CLI database is in a non-standard location?">
+  The plugin looks for the Kiro CLI database at:
+  
+  - **Linux/macOS**: `~/.local/share/kiro-cli/db.sqlite`
+  - **Windows**: `%APPDATA%\kiro-cli\db.sqlite`
+  
+  If your database is elsewhere, you'll need to use direct authentication via `opencode auth login` instead of relying on auto-sync.
+</Accordion>

@@ -1,0 +1,385 @@
+---
+title: "Local Development"
+description: "Develop and test the Kiro Auth plugin locally without publishing to npm"
+---
+
+This guide explains how to develop and test changes to the OpenCode Kiro Auth plugin on your local machine.
+
+## Overview
+
+OpenCode installs plugins into a cache directory, typically `~/.cache/opencode/node_modules`. To test local changes without publishing to npm, you can hot-swap the plugin's `dist/` folder with your locally built version.
+
+<Warning>
+This method directly modifies your OpenCode plugin cache. Always create backups before making changes.
+</Warning>
+
+## Prerequisites
+
+- Bun or npm installed
+- OpenCode installed with the Kiro Auth plugin
+- Source code cloned from the repository
+
+## Development Workflow
+
+<Steps>
+  <Step title="Build the plugin">
+    Navigate to your local plugin repository and build it:
+
+    <CodeGroup>
+    ```bash Bun
+    bun run build
+    ```
+
+    ```bash npm
+    npm run build
+    ```
+    </CodeGroup>
+
+    This compiles TypeScript source files in `src/` into JavaScript in the `dist/` directory.
+  </Step>
+
+  <Step title="Locate the plugin cache">
+    The plugin is installed in OpenCode's cache directory:
+
+    <CodeGroup>
+    ```bash Linux/macOS
+    ~/.cache/opencode/node_modules/@zhafron/opencode-kiro-auth
+    ```
+
+    ```powershell Windows
+    %LOCALAPPDATA%\opencode\node_modules\@zhafron\opencode-kiro-auth
+    ```
+    </CodeGroup>
+
+    Set this as an environment variable for convenience:
+
+    ```bash
+    PLUGIN_DIR="$HOME/.cache/opencode/node_modules/@zhafron/opencode-kiro-auth"
+    ```
+  </Step>
+
+  <Step title="Hot-swap the dist folder">
+    Create a timestamped backup and replace the cached `dist/` with your local build:
+
+    ```bash
+    PLUGIN_DIR="$HOME/.cache/opencode/node_modules/@zhafron/opencode-kiro-auth"
+    TS=$(date +%Y%m%d-%H%M%S)
+    cp -a "$PLUGIN_DIR/dist" "$PLUGIN_DIR/dist.bak.$TS"
+    rm -rf "$PLUGIN_DIR/dist"
+    cp -a "/absolute/path/to/opencode-kiro-auth/dist" "$PLUGIN_DIR/dist"
+    echo "Backup at: $PLUGIN_DIR/dist.bak.$TS"
+    ```
+
+    <Note>
+    Replace `/absolute/path/to/opencode-kiro-auth` with the actual path to your local repository.
+    </Note>
+  </Step>
+
+  <Step title="Test your changes">
+    Restart OpenCode or make a request to test your changes. The plugin will now use your locally built code.
+  </Step>
+</Steps>
+
+## Reverting Changes
+
+If something goes wrong, restore the original plugin:
+
+```bash
+PLUGIN_DIR="$HOME/.cache/opencode/node_modules/@zhafron/opencode-kiro-auth"
+rm -rf "$PLUGIN_DIR/dist"
+mv "$PLUGIN_DIR/dist.bak.YYYYMMDD-HHMMSS" "$PLUGIN_DIR/dist"
+```
+
+<Tip>
+Replace `YYYYMMDD-HHMMSS` with the actual timestamp from your backup.
+</Tip>
+
+## Project Structure
+
+Understanding the source structure helps when making changes:
+
+```
+src/
+├── plugin/
+│   ├── accounts.ts          # Account management and rotation
+│   ├── models.ts            # Model mapping and validation
+│   ├── config/
+│   │   ├── schema.ts        # Configuration schema (Zod)
+│   │   └── loader.ts        # Config file loading
+│   ├── storage/
+│   │   ├── sqlite.ts        # SQLite database operations
+│   │   └── migrations.ts    # Database schema migrations
+│   ├── sync/
+│   │   ├── kiro-cli.ts      # Kiro CLI database sync
+│   │   └── kiro-cli-parser.ts
+│   └── streaming/
+│       └── stream-transformer.ts
+├── core/
+│   ├── account/
+│   │   ├── account-selector.ts  # Account selection strategies
+│   │   └── usage-tracker.ts     # Usage tracking and sync
+│   ├── auth/
+│   │   ├── auth-handler.ts
+│   │   └── token-refresher.ts
+│   └── request/
+│       ├── request-handler.ts
+│       └── retry-strategy.ts
+├── kiro/
+│   ├── auth.ts              # AWS Kiro authentication
+│   └── oauth-idc.ts         # IAM Identity Center OAuth
+├── infrastructure/
+│   ├── database/
+│   │   └── account-repository.ts
+│   └── transformers/
+│       └── message-transformer.ts
+└── constants.ts             # Model mappings and endpoints
+```
+
+## Key Files for Common Changes
+
+### Adding a New Model
+
+<Steps>
+  <Step title="Update constants.ts">
+    Add the model mapping in `src/constants.ts`:
+
+    ```typescript
+    export const MODEL_MAPPING: Record<string, string> = {
+      // ... existing models
+      'new-model-name': 'KIRO_MODEL_IDENTIFIER'
+    }
+    ```
+  </Step>
+
+  <Step title="Update model validation">
+    The `SUPPORTED_MODELS` array is automatically generated from `MODEL_MAPPING`:
+
+    ```typescript
+    export const SUPPORTED_MODELS = Object.keys(MODEL_MAPPING)
+    ```
+  </Step>
+
+  <Step title="Update documentation">
+    Add the model configuration to README.md and user-facing documentation.
+  </Step>
+</Steps>
+
+### Modifying Account Selection
+
+Account selection logic is in `src/core/account/account-selector.ts`:
+
+```typescript
+async selectHealthyAccount(showToast: ToastFunction): Promise<ManagedAccount | null> {
+  this.checkCircuitBreaker()
+  
+  let count = this.accountManager.getAccountCount()
+  
+  if (count === 0 && this.config.auto_sync_kiro_cli && !this.triedEmptySync) {
+    this.triedEmptySync = true
+    await this.handleEmptyAccounts()
+    count = this.accountManager.getAccountCount()
+  }
+  
+  // Selection logic...
+}
+```
+
+### Changing Configuration Schema
+
+Configuration is defined in `src/plugin/config/schema.ts` using Zod:
+
+```typescript
+export const KiroConfigSchema = z.object({
+  account_selection_strategy: AccountSelectionStrategySchema.default('lowest-usage'),
+  default_region: RegionSchema.default('us-east-1'),
+  rate_limit_retry_delay_ms: z.number().min(1000).max(60000).default(5000),
+  // ... other config options
+})
+```
+
+## Database Schema
+
+The plugin uses SQLite for storage. Schema is defined in `src/plugin/storage/sqlite.ts`:
+
+```sql
+CREATE TABLE IF NOT EXISTS accounts (
+  id TEXT PRIMARY KEY,
+  email TEXT NOT NULL,
+  auth_method TEXT NOT NULL,
+  region TEXT NOT NULL,
+  oidc_region TEXT,
+  client_id TEXT,
+  client_secret TEXT,
+  profile_arn TEXT,
+  start_url TEXT,
+  refresh_token TEXT NOT NULL,
+  access_token TEXT NOT NULL,
+  expires_at INTEGER NOT NULL,
+  rate_limit_reset INTEGER DEFAULT 0,
+  is_healthy INTEGER DEFAULT 1,
+  unhealthy_reason TEXT,
+  recovery_time INTEGER,
+  fail_count INTEGER DEFAULT 0,
+  last_used INTEGER,
+  used_count INTEGER DEFAULT 0,
+  limit_count INTEGER DEFAULT 0,
+  last_sync INTEGER
+)
+```
+
+## Debugging
+
+### Enable Debug Logging
+
+Enable detailed API request logging in `~/.config/opencode/kiro.json`:
+
+```json
+{
+  "enable_log_api_request": true
+}
+```
+
+### Inspect Database
+
+Query the SQLite database directly:
+
+```bash
+sqlite3 ~/.config/opencode/kiro.db
+```
+
+```sql
+-- View all accounts
+SELECT email, auth_method, is_healthy, fail_count FROM accounts;
+
+-- Check usage stats
+SELECT email, used_count, limit_count FROM accounts;
+
+-- View unhealthy accounts
+SELECT email, unhealthy_reason, recovery_time FROM accounts WHERE is_healthy = 0;
+```
+
+### Check Kiro CLI Sync
+
+The plugin syncs from Kiro CLI's database at:
+
+<CodeGroup>
+```bash Linux
+~/.kiro/cli/database/cli.db
+```
+
+```bash macOS
+~/Library/Application Support/kiro/cli/database/cli.db
+```
+
+```powershell Windows
+%APPDATA%\kiro\cli\database\cli.db
+```
+</CodeGroup>
+
+## Testing Authentication Methods
+
+### AWS Builder ID
+
+```typescript
+// From src/plugin/sync/kiro-cli.ts
+const isIdc = row.key.includes('odic')
+const authMethod = isIdc ? 'idc' : 'desktop'
+```
+
+Builder ID tokens use the `desktop` auth method.
+
+### IAM Identity Center
+
+IDC requires additional client credentials:
+
+```typescript
+if (authMethod === 'idc' && (!clientId || !clientSecret)) {
+  logger.warn('Kiro CLI sync: missing IDC device credentials; skipping token import')
+  continue
+}
+```
+
+## Build Optimization
+
+The plugin is built with tsup. Check `package.json` for build configuration:
+
+```json
+{
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch"
+  }
+}
+```
+
+Use watch mode during active development:
+
+```bash
+bun run dev
+```
+
+This rebuilds automatically when source files change.
+
+## Common Issues
+
+### Changes Not Reflected
+
+<Steps>
+  <Step title="Verify build output">
+    Check that `dist/` contains your changes:
+    
+    ```bash
+    ls -la /path/to/opencode-kiro-auth/dist
+    ```
+  </Step>
+
+  <Step title="Confirm hot-swap succeeded">
+    Verify the plugin cache was updated:
+    
+    ```bash
+    ls -la ~/.cache/opencode/node_modules/@zhafron/opencode-kiro-auth/dist
+    ```
+  </Step>
+
+  <Step title="Restart OpenCode">
+    Completely restart OpenCode to reload the plugin.
+  </Step>
+</Steps>
+
+### TypeScript Errors
+
+Ensure dependencies are installed:
+
+```bash
+bun install
+```
+
+Check TypeScript configuration in `tsconfig.json`.
+
+### Database Lock Errors
+
+If SQLite reports database lock errors:
+
+```bash
+# Close all OpenCode instances
+pkill opencode
+
+# Remove lock files if they exist
+rm -f ~/.config/opencode/kiro.db-shm
+rm -f ~/.config/opencode/kiro.db-wal
+```
+
+## Contributing
+
+When contributing changes:
+
+1. Test thoroughly using the hot-swap method
+2. Verify all authentication methods (Builder ID, IDC, CLI sync)
+3. Check account rotation strategies
+4. Test with multiple accounts
+5. Ensure database migrations work correctly
+6. Update relevant documentation
+
+<Note>
+After testing locally, you can publish to npm or create a pull request to the main repository.
+</Note>

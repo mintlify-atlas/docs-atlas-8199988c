@@ -1,0 +1,402 @@
+---
+title: "KiroConfig"
+description: "Configuration options for the OpenCode Kiro Auth plugin"
+---
+
+## Overview
+
+The `KiroConfig` type defines all configuration options for the Kiro Auth plugin. Configuration can be provided through JSON files at the user or project level, or via environment variables.
+
+## Configuration Hierarchy
+
+Configuration is loaded and merged in the following order (later sources override earlier ones):
+
+1. **Default values** - Built-in defaults
+2. **User config** - `~/.config/opencode/kiro.json` (or `%APPDATA%/opencode/kiro.json` on Windows)
+3. **Project config** - `.opencode/kiro.json` in your project directory
+4. **Environment variables** - Runtime environment variables (highest priority)
+
+## Type Definition
+
+```typescript
+type KiroConfig = {
+  $schema?: string
+  
+  // AWS Identity Center (IDC) Settings
+  idc_start_url?: string
+  idc_region?: KiroRegion
+  idc_profile_arn?: string
+  
+  // Account Management
+  account_selection_strategy: 'sticky' | 'round-robin' | 'lowest-usage'
+  
+  // Regional Settings
+  default_region: KiroRegion
+  
+  // Rate Limiting
+  rate_limit_retry_delay_ms: number
+  rate_limit_max_retries: number
+  
+  // Request Configuration
+  max_request_iterations: number
+  request_timeout_ms: number
+  token_expiry_buffer_ms: number
+  
+  // Usage Tracking
+  usage_sync_max_retries: number
+  usage_tracking_enabled: boolean
+  
+  // Authentication Server
+  auth_server_port_start: number
+  auth_server_port_range: number
+  
+  // Other Settings
+  auto_sync_kiro_cli: boolean
+  enable_log_api_request: boolean
+}
+```
+
+## Configuration Options
+
+### AWS Identity Center Settings
+
+<ParamField path="idc_start_url" type="string" optional>
+  The AWS IAM Identity Center (SSO) start URL for your organization.
+  
+  **Example**: `https://my-org.awsapps.com/start`
+  
+  **Default**: Uses AWS Builder ID start URL (`https://view.awsapps.com/start`)
+</ParamField>
+
+<ParamField path="idc_region" type="KiroRegion" optional>
+  The AWS region where your Identity Center instance is deployed.
+  
+  **Example**: `us-east-1`
+</ParamField>
+
+<ParamField path="idc_profile_arn" type="string" optional>
+  The ARN of the AWS profile to use for Identity Center authentication.
+  
+  **Example**: `arn:aws:iam::123456789012:role/MyRole`
+</ParamField>
+
+### Account Management
+
+<ParamField path="account_selection_strategy" type="'sticky' | 'round-robin' | 'lowest-usage'" default="lowest-usage">
+  Strategy for selecting which managed account to use for API requests.
+  
+  - **`sticky`**: Always use the same account
+  - **`round-robin`**: Rotate through accounts evenly
+  - **`lowest-usage`**: Select account with lowest current usage (recommended)
+  
+  **Environment variable**: `KIRO_ACCOUNT_SELECTION_STRATEGY`
+</ParamField>
+
+### Regional Settings
+
+<ParamField path="default_region" type="KiroRegion" default="us-east-1">
+  The default AWS region to use for API requests.
+  
+  **Validation**: Must be one of the [supported regions](#kiroregion)
+  
+  **Environment variable**: `KIRO_DEFAULT_REGION`
+</ParamField>
+
+### Rate Limiting
+
+<ParamField path="rate_limit_retry_delay_ms" type="number" default={5000}>
+  Delay in milliseconds before retrying after a rate limit error.
+  
+  **Range**: 1,000 - 60,000 ms (1-60 seconds)
+  
+  **Environment variable**: `KIRO_RATE_LIMIT_RETRY_DELAY_MS`
+</ParamField>
+
+<ParamField path="rate_limit_max_retries" type="number" default={3}>
+  Maximum number of retry attempts when rate limited.
+  
+  **Range**: 0 - 10
+  
+  **Environment variable**: `KIRO_RATE_LIMIT_MAX_RETRIES`
+</ParamField>
+
+### Request Configuration
+
+<ParamField path="max_request_iterations" type="number" default={20}>
+  Maximum number of iterations for streaming requests with tool calls.
+  
+  **Range**: 5 - 1,000
+  
+  **Environment variable**: `KIRO_MAX_REQUEST_ITERATIONS`
+</ParamField>
+
+<ParamField path="request_timeout_ms" type="number" default={120000}>
+  Timeout for API requests in milliseconds.
+  
+  **Range**: 30,000 - 600,000 ms (30 seconds - 10 minutes)
+  
+  **Default**: 120,000 ms (2 minutes)
+  
+  **Environment variable**: `KIRO_REQUEST_TIMEOUT_MS`
+</ParamField>
+
+<ParamField path="token_expiry_buffer_ms" type="number" default={300000}>
+  Buffer time before token expiry to trigger refresh, in milliseconds.
+  
+  **Range**: 30,000 - 300,000 ms (30 seconds - 5 minutes)
+  
+  **Default**: 300,000 ms (5 minutes)
+  
+  **Environment variable**: `KIRO_TOKEN_EXPIRY_BUFFER_MS`
+  
+  <Note>
+    Tokens are refreshed proactively before they expire to prevent authentication failures during active requests.
+  </Note>
+</ParamField>
+
+### Usage Tracking
+
+<ParamField path="usage_sync_max_retries" type="number" default={3}>
+  Maximum retry attempts for syncing usage data.
+  
+  **Range**: 0 - 5
+  
+  **Environment variable**: `KIRO_USAGE_SYNC_MAX_RETRIES`
+</ParamField>
+
+<ParamField path="usage_tracking_enabled" type="boolean" default={true}>
+  Enable or disable usage tracking and limits synchronization.
+  
+  **Environment variable**: `KIRO_USAGE_TRACKING_ENABLED` (use `1`/`true` or `0`/`false`)
+</ParamField>
+
+### Authentication Server
+
+<ParamField path="auth_server_port_start" type="number" default={19847}>
+  Starting port number for the local authentication callback server.
+  
+  **Range**: 1,024 - 65,535
+  
+  **Environment variable**: `KIRO_AUTH_SERVER_PORT_START`
+</ParamField>
+
+<ParamField path="auth_server_port_range" type="number" default={10}>
+  Number of ports to try if the starting port is unavailable.
+  
+  **Range**: 1 - 100
+  
+  **Environment variable**: `KIRO_AUTH_SERVER_PORT_RANGE`
+  
+  <Note>
+    The auth server will try ports from `auth_server_port_start` to `auth_server_port_start + auth_server_port_range - 1`.
+  </Note>
+</ParamField>
+
+### Other Settings
+
+<ParamField path="auto_sync_kiro_cli" type="boolean" default={true}>
+  Automatically sync authentication state with Kiro CLI.
+  
+  When enabled, the plugin will import and synchronize accounts from the Kiro CLI configuration.
+</ParamField>
+
+<ParamField path="enable_log_api_request" type="boolean" default={false}>
+  Enable detailed logging of API requests and responses.
+  
+  **Environment variable**: `KIRO_ENABLE_LOG_API_REQUEST` (use `1`/`true` or `0`/`false`)
+  
+  <Warning>
+    Enabling this option may log sensitive data. Only use for debugging purposes.
+  </Warning>
+</ParamField>
+
+<ParamField path="$schema" type="string" optional>
+  JSON Schema reference for IDE autocomplete and validation.
+  
+  This field is ignored by the plugin but helpful for editor support.
+</ParamField>
+
+## KiroRegion
+
+The `KiroRegion` type represents supported AWS regions:
+
+```typescript
+type KiroRegion =
+  | 'us-east-1'
+  | 'us-east-2'
+  | 'us-west-1'
+  | 'us-west-2'
+  | 'af-south-1'
+  | 'ap-east-1'
+  | 'ap-south-1'
+  | 'ap-south-2'
+  | 'ap-northeast-1'
+  | 'ap-northeast-2'
+  | 'ap-northeast-3'
+  | 'ap-southeast-1'
+  | 'ap-southeast-2'
+  | 'ap-southeast-3'
+  | 'ap-southeast-4'
+  | 'ap-southeast-5'
+  | 'ap-southeast-6'
+  | 'ap-southeast-7'
+  | 'ap-east-2'
+  | 'ca-central-1'
+  | 'ca-west-1'
+  | 'eu-central-1'
+  | 'eu-central-2'
+  | 'eu-west-1'
+  | 'eu-west-2'
+  | 'eu-west-3'
+  | 'eu-south-1'
+  | 'eu-south-2'
+  | 'eu-north-1'
+  | 'il-central-1'
+  | 'mx-central-1'
+  | 'me-south-1'
+  | 'me-central-1'
+  | 'sa-east-1'
+```
+
+## Configuration Examples
+
+### User Configuration File
+
+Create `~/.config/opencode/kiro.json` (or `%APPDATA%/opencode/kiro.json` on Windows):
+
+```json
+{
+  "default_region": "us-west-2",
+  "account_selection_strategy": "lowest-usage",
+  "request_timeout_ms": 180000,
+  "usage_tracking_enabled": true
+}
+```
+
+### Project Configuration File
+
+Create `.opencode/kiro.json` in your project root:
+
+```json
+{
+  "idc_start_url": "https://my-org.awsapps.com/start",
+  "idc_region": "us-east-1",
+  "default_region": "us-east-1",
+  "rate_limit_max_retries": 5,
+  "enable_log_api_request": false
+}
+```
+
+### Environment Variables
+
+```bash
+# Account strategy
+export KIRO_ACCOUNT_SELECTION_STRATEGY=round-robin
+
+# Regional settings
+export KIRO_DEFAULT_REGION=eu-west-1
+
+# Rate limiting
+export KIRO_RATE_LIMIT_RETRY_DELAY_MS=3000
+export KIRO_RATE_LIMIT_MAX_RETRIES=5
+
+# Request configuration
+export KIRO_REQUEST_TIMEOUT_MS=180000
+export KIRO_MAX_REQUEST_ITERATIONS=30
+
+# Enable debug logging
+export KIRO_ENABLE_LOG_API_REQUEST=1
+```
+
+### Complete Example with Schema
+
+```json
+{
+  "$schema": "https://opencode.ai/schemas/kiro-config.json",
+  "idc_start_url": "https://my-org.awsapps.com/start",
+  "idc_region": "us-east-1",
+  "idc_profile_arn": "arn:aws:iam::123456789012:role/KiroRole",
+  "account_selection_strategy": "lowest-usage",
+  "default_region": "us-east-1",
+  "rate_limit_retry_delay_ms": 5000,
+  "rate_limit_max_retries": 3,
+  "max_request_iterations": 20,
+  "request_timeout_ms": 120000,
+  "token_expiry_buffer_ms": 300000,
+  "usage_sync_max_retries": 3,
+  "auth_server_port_start": 19847,
+  "auth_server_port_range": 10,
+  "usage_tracking_enabled": true,
+  "auto_sync_kiro_cli": true,
+  "enable_log_api_request": false
+}
+```
+
+## Loading Configuration
+
+The plugin provides utilities to load configuration:
+
+```typescript
+import { loadConfig, getUserConfigPath, getProjectConfigPath } from '@opencode/kiro-auth'
+
+// Load merged configuration for a project directory
+const config = loadConfig(process.cwd())
+
+// Get config file paths
+const userConfigPath = getUserConfigPath()
+console.log(`User config: ${userConfigPath}`)
+
+const projectConfigPath = getProjectConfigPath(process.cwd())
+console.log(`Project config: ${projectConfigPath}`)
+```
+
+## Default Configuration
+
+If no configuration files exist, the plugin uses these defaults:
+
+```typescript
+const DEFAULT_CONFIG: KiroConfig = {
+  account_selection_strategy: 'lowest-usage',
+  default_region: 'us-east-1',
+  rate_limit_retry_delay_ms: 5000,
+  rate_limit_max_retries: 3,
+  max_request_iterations: 20,
+  request_timeout_ms: 120000,
+  token_expiry_buffer_ms: 300000,
+  usage_sync_max_retries: 3,
+  auth_server_port_start: 19847,
+  auth_server_port_range: 10,
+  usage_tracking_enabled: true,
+  auto_sync_kiro_cli: true,
+  enable_log_api_request: false
+}
+```
+
+<Note>
+  When you first load configuration, a default template file is automatically created at `getUserConfigPath()` if it doesn't exist.
+</Note>
+
+## Validation
+
+All configuration values are validated using Zod schemas:
+
+- Invalid values are logged as warnings and ignored
+- Invalid JSON syntax results in the entire config file being skipped
+- Out-of-range numeric values use the default instead
+- Invalid enum values (regions, strategies) use the default
+
+```typescript
+// Example validation ranges:
+// rate_limit_retry_delay_ms: 1000-60000
+// rate_limit_max_retries: 0-10
+// max_request_iterations: 5-1000
+// request_timeout_ms: 30000-600000
+// token_expiry_buffer_ms: 30000-300000
+// usage_sync_max_retries: 0-5
+// auth_server_port_start: 1024-65535
+// auth_server_port_range: 1-100
+```
+
+## Related
+
+- [authorizeKiroIDC](/api/auth/authorize-kiro-idc) - Initialize AWS IAM Identity Center authentication

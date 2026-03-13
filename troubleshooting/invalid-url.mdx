@@ -1,0 +1,190 @@
+---
+title: "Invalid URL Error"
+description: "Resolve ERR_INVALID_URL errors caused by incorrect auth.json configuration"
+---
+
+The **ERR_INVALID_URL** error occurs when OpenCode cannot parse the API endpoint URL due to missing or incorrect configuration in your `auth.json` file.
+
+## Error Message
+
+```
+TypeError [ERR_INVALID_URL]: "undefined/chat/completions" cannot be parsed as a URL
+```
+
+This error indicates that the base URL is `undefined`, causing the request to fail before reaching the plugin.
+
+## Root Cause
+
+This error is caused by an incorrectly formatted entry in `~/.local/share/opencode/auth.json`. OpenCode expects plugin-based authentication to use a specific format, but if the entry is malformed, the URL resolution fails.
+
+## Solution
+
+<Steps>
+  <Step title="Locate auth.json">
+    Find your OpenCode authentication configuration file:
+    
+    - **Linux/macOS**: `~/.local/share/opencode/auth.json`
+    - **Windows**: `%LOCALAPPDATA%\opencode\auth.json`
+  </Step>
+  
+  <Step title="Check the Kiro entry">
+    Open `auth.json` and look for the `kiro` entry. It should look like this:
+    
+    ```json
+    {
+      "kiro": {
+        "type": "api",
+        "key": "whatever"
+      }
+    }
+    ```
+    
+    <Warning>
+      The `key` value can be any string (e.g., `"whatever"`, `"placeholder"`, or `"unused"`) because the plugin handles authentication internally. The important part is having the correct structure.
+    </Warning>
+  </Step>
+  
+  <Step title="Fix the configuration">
+    If the `kiro` entry is missing, malformed, or contains incorrect fields, replace it with the correct format:
+    
+    ```json
+    {
+      "kiro": {
+        "type": "api",
+        "key": "placeholder"
+      }
+    }
+    ```
+    
+    Save the file and restart OpenCode.
+  </Step>
+  
+  <Step title="Verify authentication">
+    After fixing `auth.json`, complete the authentication process:
+    
+    ```bash
+    opencode auth login
+    ```
+    
+    Or ensure Kiro CLI is authenticated and auto-sync is enabled.
+  </Step>
+</Steps>
+
+## Common Mistakes
+
+Here are common auth.json configurations that cause this error:
+
+<CodeGroup>
+  ```json Missing type field
+  {
+    "kiro": {
+      "key": "test"
+    }
+  }
+  ```
+  
+  ```json Missing key field
+  {
+    "kiro": {
+      "type": "api"
+    }
+  }
+  ```
+  
+  ```json Wrong type value
+  {
+    "kiro": {
+      "type": "oauth",
+      "key": "test"
+    }
+  }
+  ```
+  
+  ```json Completely missing entry
+  {
+    "anthropic": {
+      "type": "api",
+      "key": "sk-ant-..."
+    }
+  }
+  ```
+</CodeGroup>
+
+All of these will cause the `ERR_INVALID_URL` error. The correct format is:
+
+```json Correct format
+{
+  "kiro": {
+    "type": "api",
+    "key": "placeholder"
+  }
+}
+```
+
+## Why This Happens
+
+The OpenCode Kiro Auth plugin uses a **plugin-based authentication** model:
+
+1. OpenCode checks `auth.json` to see if the `kiro` provider is configured
+2. If configured, it loads the plugin and delegates authentication
+3. The plugin handles all token management internally using `kiro.db`
+
+The `auth.json` entry acts as a **flag** to tell OpenCode that the provider exists. The actual authentication credentials (access tokens, refresh tokens, OIDC client secrets) are stored in the plugin's database at `~/.config/opencode/kiro.db`, not in `auth.json`.
+
+<Info>
+  Unlike traditional API key providers (like Anthropic or OpenAI), the Kiro plugin doesn't use the `key` field from `auth.json`. It's just a placeholder to enable the provider.
+</Info>
+
+## Alternative: Use opencode auth login
+
+Instead of manually editing `auth.json`, you can use the authentication command:
+
+```bash
+opencode auth login
+```
+
+This will:
+1. Create the correct `auth.json` entry automatically
+2. Guide you through the OAuth flow
+3. Store credentials in the plugin database
+
+## Verification
+
+After fixing the configuration, verify that OpenCode recognizes the Kiro provider:
+
+```bash
+opencode auth status
+```
+
+You should see `kiro` listed as a configured provider. If you still see the error, check the OpenCode logs for additional details:
+
+```bash
+tail -f ~/.local/share/opencode/logs/opencode.log
+```
+
+## Related Information
+
+<Accordion title="What's the difference between auth.json and kiro.json?">
+  These are two separate configuration files with different purposes:
+  
+  - **auth.json** (`~/.local/share/opencode/auth.json`): OpenCode's main authentication file. Contains provider entries that tell OpenCode which providers are enabled. For Kiro, this is just a placeholder.
+  
+  - **kiro.json** (`~/.config/opencode/kiro.json`): Plugin-specific configuration file. Contains settings like `auto_sync_kiro_cli`, `idc_start_url`, `account_selection_strategy`, etc.
+  
+  Both files are required for the plugin to work correctly.
+</Accordion>
+
+<Accordion title="Will editing auth.json delete my accounts?">
+  No. Your account credentials are stored in the plugin's SQLite database at `~/.config/opencode/kiro.db`, not in `auth.json`. Editing `auth.json` only affects whether OpenCode loads the plugin, not the stored credentials.
+  
+  However, if you remove the `kiro` entry from `auth.json`, OpenCode won't load the plugin and you won't be able to use Kiro models until you re-add it.
+</Accordion>
+
+<Accordion title="Can I use a custom base URL?">
+  No. The Kiro plugin uses AWS CodeWhisperer/Q Developer API endpoints, which are hardcoded to AWS regions:
+  
+  - `https://codewhisperer.us-east-1.amazonaws.com`
+  - `https://codewhisperer.us-west-2.amazonaws.com`
+  
+  The plugin automatically constructs the correct URL based on the account's region. You cannot override this with a custom base URL.
+</Accordion>

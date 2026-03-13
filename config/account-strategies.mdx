@@ -1,0 +1,409 @@
+---
+title: "Account Selection Strategies"
+description: "Configure intelligent account rotation and selection for optimal quota management"
+---
+
+The Kiro Auth plugin supports multiple accounts simultaneously and provides three strategies for selecting which account to use for each request. This enables sophisticated quota management and high availability.
+
+## Overview
+
+When multiple accounts are configured, the plugin must decide which account to use for each API request. The selection strategy determines this behavior and can significantly impact your usage patterns and quota consumption.
+
+<ParamField path="account_selection_strategy" type="enum" default="lowest-usage">
+  Controls how the plugin selects accounts for API requests.
+  
+  **Options:**
+  - `sticky` - Use the same account until it fails or hits rate limits
+  - `round-robin` - Cycle through accounts in order
+  - `lowest-usage` - Prioritize accounts with the lowest quota usage (recommended)
+</ParamField>
+
+## Strategy Comparison
+
+<CodeGroup>
+```json Lowest Usage (Recommended)
+{
+  "account_selection_strategy": "lowest-usage"
+}
+```
+
+```json Sticky
+{
+  "account_selection_strategy": "sticky"
+}
+```
+
+```json Round Robin
+{
+  "account_selection_strategy": "round-robin"
+}
+```
+</CodeGroup>
+
+## Sticky Strategy
+
+<Accordion title="How Sticky Strategy Works">
+  The sticky strategy selects one account and continues using it for all requests until it becomes unavailable.
+  
+  **Selection Logic:**
+  1. Use the current account if healthy and not rate-limited
+  2. If unavailable, select the first available account
+  3. Stick with this account until it fails
+  
+  **Account State Tracking:**
+  - Tracks `lastUsed` timestamp for each account
+  - Increments `usedCount` on each request
+  - Maintains cursor position for account selection
+</Accordion>
+
+### When to Use Sticky
+
+<Tip>
+**Single account setups:** When you only have one account, sticky strategy is efficient and simple.
+</Tip>
+
+<Tip>
+**Debugging:** Sticky strategy makes it easier to trace requests to a specific account during troubleshooting.
+</Tip>
+
+### Sticky Strategy Behavior
+
+```typescript
+// Simplified logic from accounts.ts:102-111
+if (this.strategy === 'sticky') {
+  // Try to use the current cursor position
+  selected = available.find((_, i) => i === this.cursor) || available[0]
+}
+```
+
+The sticky strategy maintains a cursor pointing to the current account and only moves when that account becomes unhealthy or rate-limited.
+
+### Sticky Strategy Example
+
+```text
+Request 1 → Account A (cursor = 0)
+Request 2 → Account A (cursor = 0)
+Request 3 → Account A (cursor = 0)
+...
+Request 50 → Account A (cursor = 0, rate limited)
+Request 51 → Account B (cursor = 1)
+Request 52 → Account B (cursor = 1)
+```
+
+## Round Robin Strategy
+
+<Accordion title="How Round Robin Strategy Works">
+  The round-robin strategy cycles through all available accounts in order, distributing load evenly.
+  
+  **Selection Logic:**
+  1. Filter accounts to find available ones (healthy and not rate-limited)
+  2. Select the account at cursor position modulo available count
+  3. Increment cursor for next request
+  4. Wrap around to beginning when reaching the end
+  
+  **Load Distribution:**
+  - Ensures all accounts receive approximately equal usage
+  - Prevents any single account from being overused
+  - Rotates cursor automatically
+</Accordion>
+
+### When to Use Round Robin
+
+<Tip>
+**Equal distribution:** When you want to ensure all accounts are used equally, regardless of quota status.
+</Tip>
+
+<Tip>
+**Simple multi-account:** When quota tracking isn't critical and you just want to spread load across accounts.
+</Tip>
+
+### Round Robin Strategy Behavior
+
+```typescript
+// Simplified logic from accounts.ts:104-106
+if (this.strategy === 'round-robin') {
+  selected = available[this.cursor % available.length]
+  this.cursor = (this.cursor + 1) % available.length
+}
+```
+
+The round-robin strategy advances the cursor after each selection, ensuring fair distribution across all accounts.
+
+### Round Robin Example
+
+```text
+Request 1 → Account A (cursor = 0 → 1)
+Request 2 → Account B (cursor = 1 → 2)
+Request 3 → Account C (cursor = 2 → 0)
+Request 4 → Account A (cursor = 0 → 1)
+Request 5 → Account B (cursor = 1 → 2)
+```
+
+## Lowest Usage Strategy (Recommended)
+
+<Accordion title="How Lowest Usage Strategy Works">
+  The lowest-usage strategy is quota-aware and prioritizes accounts with the most available quota.
+  
+  **Selection Logic:**
+  1. Filter accounts to find available ones (healthy and not rate-limited)
+  2. Sort accounts by `usedCount` (ascending) then `lastUsed` (ascending)
+  3. Select the account with the lowest usage
+  4. Track usage metrics after each request
+  
+  **Usage Tracking:**
+  - Syncs `usedCount` and `limitCount` from AWS APIs
+  - Updates after each successful request
+  - Fallback to accounts without usage data
+</Accordion>
+
+### When to Use Lowest Usage
+
+<Tip>
+**Multi-account optimization:** This is the recommended strategy for multiple accounts. It maximizes your total available quota by intelligently rotating accounts.
+</Tip>
+
+<Tip>
+**Quota management:** When you need to monitor and optimize quota consumption across accounts.
+</Tip>
+
+<Tip>
+**High availability:** Automatically switches to accounts with more available quota, reducing rate limit errors.
+</Tip>
+
+### Lowest Usage Strategy Behavior
+
+```typescript
+// Simplified logic from accounts.ts:107-110
+if (this.strategy === 'lowest-usage') {
+  selected = [...available].sort(
+    (a, b) => (a.usedCount || 0) - (b.usedCount || 0) || 
+              (a.lastUsed || 0) - (b.lastUsed || 0)
+  )[0]
+}
+```
+
+The lowest-usage strategy performs real-time sorting to find the account with the most remaining quota.
+
+### Lowest Usage Example
+
+```text
+Account A: usedCount=100, limitCount=1000 (10% used)
+Account B: usedCount=50,  limitCount=500  (10% used)
+Account C: usedCount=450, limitCount=500  (90% used)
+
+Request 1 → Account B (lowest usedCount)
+Request 2 → Account B (still lowest after +1)
+Request 3 → Account A (now has lower usedCount)
+...
+
+Account C only used when A and B are rate-limited
+```
+
+## Account Health and Availability
+
+All strategies respect account health status when selecting accounts. The plugin automatically manages account health based on API responses.
+
+### Health States
+
+<Info>
+**Healthy:** Account is available for requests. `isHealthy = true`, no rate limits active.
+</Info>
+
+<Warning>
+**Rate Limited:** Account is temporarily unavailable due to rate limiting. Automatically recovers after `rateLimitResetTime`.
+</Warning>
+
+<Warning>
+**Unhealthy (Temporary):** Account failed but may recover. Marked unhealthy until `recoveryTime` or `failCount < 10`.
+</Warning>
+
+<Warning>
+**Unhealthy (Permanent):** Account has permanent errors (e.g., `AccessDeniedException`, `ExpiredToken`). Requires manual intervention.
+</Warning>
+
+### Health Check Logic
+
+```typescript
+// Simplified logic from accounts.ts:84-98
+const available = this.accounts.filter((a) => {
+  // Skip permanently unhealthy accounts
+  if (!a.isHealthy && isPermanentError(a.unhealthyReason)) {
+    return false
+  }
+  
+  // Allow recovery for temporary failures
+  if (!a.isHealthy && a.failCount < 10 && now >= a.recoveryTime) {
+    a.isHealthy = true
+    return true
+  }
+  
+  // Skip rate-limited accounts
+  if (a.rateLimitResetTime && now < a.rateLimitResetTime) {
+    return false
+  }
+  
+  return a.isHealthy
+})
+```
+
+### Fallback Mechanism
+
+<Accordion title="What happens when no accounts are available?">
+  If no healthy accounts are available, the plugin uses intelligent fallback logic:
+  
+  1. **Check for recovering accounts:** Accounts with `failCount < 10` that haven't reached permanent failure
+  2. **Sort by usage:** Prioritize accounts with lower usage even if temporarily unhealthy
+  3. **Force recovery:** Mark the selected account as healthy and attempt the request
+  4. **Increment fail counter:** If request fails again, increment `failCount`
+  
+  This ensures the plugin always attempts to service requests, even under adverse conditions.
+</Accordion>
+
+```typescript
+// Fallback logic from accounts.ts:113-124
+if (!selected) {
+  const fallback = this.accounts
+    .filter(a => !a.isHealthy && a.failCount < 10 && 
+                 !isPermanentError(a.unhealthyReason))
+    .sort((a, b) => (a.usedCount || 0) - (b.usedCount || 0) || 
+                     (a.lastUsed || 0) - (b.lastUsed || 0))[0]
+  
+  if (fallback) {
+    fallback.isHealthy = true
+    delete fallback.unhealthyReason
+    delete fallback.recoveryTime
+    selected = fallback
+  }
+}
+```
+
+## Usage Tracking
+
+For the lowest-usage strategy to work effectively, usage tracking must be enabled:
+
+<CodeGroup>
+```json Enable Usage Tracking
+{
+  "account_selection_strategy": "lowest-usage",
+  "usage_tracking_enabled": true,
+  "usage_sync_max_retries": 3
+}
+```
+</CodeGroup>
+
+<ParamField path="usage_tracking_enabled" type="boolean" default="true">
+  Enable usage tracking and toast notifications for quota status.
+  
+  When enabled, the plugin:
+  - Fetches usage data from AWS APIs after each request
+  - Updates `usedCount` and `limitCount` for each account
+  - Displays toast notifications with quota status
+  - Enables quota-aware account selection
+</ParamField>
+
+### Usage Sync Parameters
+
+<ParamField path="usage_sync_max_retries" type="number" default="3">
+  Maximum retry attempts for usage synchronization.
+  
+  **Range:** 0-5
+  
+  If usage sync fails, the plugin will retry up to this many times before giving up. Accounts without usage data will fall back to `lastUsed` timestamp for selection.
+</ParamField>
+
+## Configuration Examples
+
+### Optimal Multi-Account Setup
+
+```json kiro.json
+{
+  "account_selection_strategy": "lowest-usage",
+  "usage_tracking_enabled": true,
+  "usage_sync_max_retries": 3,
+  "rate_limit_max_retries": 5,
+  "rate_limit_retry_delay_ms": 5000
+}
+```
+
+This configuration enables intelligent quota-aware rotation with automatic retry on rate limits.
+
+### Simple Round Robin
+
+```json kiro.json
+{
+  "account_selection_strategy": "round-robin",
+  "usage_tracking_enabled": false
+}
+```
+
+Simple load distribution without quota tracking overhead.
+
+### Single Account with Retries
+
+```json kiro.json
+{
+  "account_selection_strategy": "sticky",
+  "rate_limit_max_retries": 3,
+  "rate_limit_retry_delay_ms": 10000
+}
+```
+
+Optimized for single account with aggressive retry logic.
+
+## Monitoring Account Usage
+
+The plugin stores detailed account metadata in the SQLite database:
+
+**Database Location:**
+- Linux/macOS: `~/.config/opencode/kiro.db`
+- Windows: `%APPDATA%\opencode\kiro.db`
+
+**Tracked Fields:**
+```typescript
+interface ManagedAccount {
+  id: string                    // Account identifier
+  email: string                 // Account email
+  usedCount?: number            // Current quota usage
+  limitCount?: number           // Total quota limit
+  lastUsed?: number             // Last usage timestamp
+  lastSync?: number             // Last usage sync timestamp
+  isHealthy: boolean            // Health status
+  unhealthyReason?: string      // Failure reason
+  failCount: number             // Consecutive failures
+  rateLimitResetTime: number    // Rate limit recovery time
+  recoveryTime?: number         // Health recovery time
+}
+```
+
+<Tip>
+Use a SQLite browser to inspect account status and usage metrics in the database for debugging and monitoring.
+</Tip>
+
+## Best Practices
+
+<Accordion title="Use lowest-usage for multiple accounts">
+  The `lowest-usage` strategy provides the best experience for multi-account setups by intelligently managing quota across all accounts.
+</Accordion>
+
+<Accordion title="Enable usage tracking">
+  Always enable `usage_tracking_enabled` when using the `lowest-usage` strategy. Without usage data, the strategy falls back to `lastUsed` timestamps.
+</Accordion>
+
+<Accordion title="Configure appropriate retries">
+  Set `rate_limit_max_retries` based on your workload. Higher values provide better reliability but may increase request latency during high load.
+</Accordion>
+
+<Accordion title="Monitor account health">
+  Regularly check the database for accounts with high `failCount` or permanent errors. Remove or fix unhealthy accounts to maintain optimal performance.
+</Accordion>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Configuration Overview" icon="gear" href="/config/overview">
+    Return to configuration overview
+  </Card>
+  <Card title="Advanced Options" icon="sliders" href="/config/advanced-options">
+    Explore advanced configuration options
+  </Card>
+</CardGroup>

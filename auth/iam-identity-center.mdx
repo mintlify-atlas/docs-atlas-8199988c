@@ -1,0 +1,490 @@
+---
+title: "IAM Identity Center Authentication"
+description: "Authenticate with AWS IAM Identity Center (SSO) for enterprise access to Claude models"
+---
+
+IAM Identity Center (formerly AWS SSO) allows organizations to provide centralized authentication for AWS services. This method is used when your organization has a custom AWS Identity Center portal.
+
+## Overview
+
+IAM Identity Center authentication extends the standard OAuth flow with:
+
+- Custom organization start URLs
+- Profile ARN requirements for Q Developer access
+- Device registration with OIDC client credentials
+- Regional OIDC endpoints
+
+<Warning>
+IAM Identity Center authentication requires a **profile ARN** to access Q Developer APIs. Without it, you'll receive `403 AccessDeniedException` errors.
+</Warning>
+
+## Prerequisites
+
+Before authenticating, you need:
+
+1. **IAM Identity Center Start URL**: Your organization's portal URL (e.g., `https://your-company.awsapps.com/start`)
+2. **IAM Identity Center Region**: The AWS region where your Identity Center is configured (default: `us-east-1`)
+3. **Profile ARN** (optional): AWS Q Developer profile ARN
+   - Auto-detected if you've run `kiro-cli profile` once
+   - Can be manually configured in `~/.config/opencode/kiro.json`
+
+## Authentication Flow
+
+<Steps>
+  <Step title="Start Authentication">
+    Run the authentication command:
+    
+    ```bash
+    opencode auth login
+    ```
+    
+    Select **Other**, type `kiro`, and press enter.
+  </Step>
+  
+  <Step title="Enter IAM Identity Center Details">
+    When prompted, provide your organization's details:
+    
+    **IAM Identity Center Start URL:**
+    ```
+    https://your-company.awsapps.com/start
+    ```
+    
+    **IAM Identity Center region (sso_region):**
+    ```
+    us-east-1
+    ```
+    
+    <Info>
+    The start URL must end with `/start`. The plugin automatically normalizes URLs to this format.
+    </Info>
+  </Step>
+  
+  <Step title="Complete Browser Authorization">
+    A browser window opens to your organization's Identity Center portal:
+    
+    ```
+    https://your-company.awsapps.com/start/#/device?user_code=XXXX-XXXX
+    ```
+    
+    The plugin automatically routes you to the device verification page with the code pre-filled.
+  </Step>
+  
+  <Step title="Sign In with SSO">
+    On your organization's portal:
+    
+    1. Sign in using your SSO credentials (SAML, OIDC, etc.)
+    2. Approve the authorization request for AWS Q Developer
+    3. Grant the requested CodeWhisperer permissions
+  </Step>
+  
+  <Step title="Select Profile (if required)">
+    If you encounter `403 AccessDeniedException`, you need to select a profile:
+    
+    ```bash
+    kiro-cli profile
+    ```
+    
+    Select a Q Developer profile (e.g., `QDevProfile-us-east-1`), then retry authentication.
+    
+    <Note>
+    The plugin reads the active profile ARN from Kiro CLI's database at `state.key = 'api.codewhisperer.profile'`.
+    </Note>
+  </Step>
+</Steps>
+
+## OAuth Implementation Details
+
+### Start URL Normalization
+
+The plugin normalizes start URLs to ensure consistent formatting:
+
+```typescript
+// From: src/core/auth/idc-auth-method.ts:26-40
+function normalizeStartUrl(raw: string | undefined): string | undefined {
+  if (!raw) return undefined
+  const trimmed = raw.trim()
+  if (!trimmed) return undefined
+
+  const url = new URL(trimmed)
+  url.hash = ''
+  url.search = ''
+
+  // Normalize to end in /start
+  if (url.pathname.endsWith('/start/')) {
+    url.pathname = url.pathname.replace(/\/start\/$/, '/start')
+  }
+  if (!url.pathname.endsWith('/start')) {
+    url.pathname = url.pathname.replace(/\/+$/, '') + '/start'
+  }
+
+  return url.toString()
+}
+```
+
+### Device URL Construction
+
+For Identity Center, the plugin constructs a direct device verification URL:
+
+```typescript
+// From: src/core/auth/idc-auth-method.ts:42-50
+function buildDeviceUrl(startUrl: string, userCode: string): string {
+  const url = new URL(startUrl)
+  url.search = ''
+  
+  // Prefer /start/ with trailing slash
+  if (url.pathname.endsWith('/start')) url.pathname = `${url.pathname}/`
+  url.pathname = url.pathname.replace(/\/start\/?$/, '/start/')
+  
+  url.hash = `#/device?user_code=${encodeURIComponent(userCode)}`
+  return url.toString()
+}
+```
+
+<Info>
+This bypasses the AWS Builder ID email prompt and routes directly to your organization's SSO login page.
+</Info>
+
+### Authorization with Profile ARN
+
+The authorization callback handles profile ARN requirements:
+
+```typescript
+// From: src/core/auth/idc-auth-method.ts:103-126
+const profileArn = configuredProfileArn || readActiveProfileArnFromKiroCli()
+const serviceRegion = extractRegionFromArn(profileArn) || configuredServiceRegion
+
+let usage: any
+try {
+  usage = await fetchUsageLimits({
+    refresh: '',
+    access: token.accessToken,
+    expires: token.expiresAt,
+    authMethod: 'idc',
+    region: serviceRegion,
+    clientId: token.clientId,
+    clientSecret: token.clientSecret,
+    profileArn
+  })
+} catch (e) {
+  if (startUrl && !profileArn) {
+    throw new Error(
+      `Missing profile ARN for IAM Identity Center. ` +
+      `Set "idc_profile_arn" in ~/.config/opencode/kiro.json, ` +
+      `or run "kiro-cli profile" once so it can be auto-detected. ` +
+      `Original error: ${e instanceof Error ? e.message : String(e)}`
+    )
+  }
+  throw e
+}
+```
+
+### Profile ARN Auto-Detection
+
+The plugin reads the active profile ARN from Kiro CLI's database:
+
+```typescript
+// From: src/plugin/sync/kiro-cli-profile.ts:5-29
+export function readActiveProfileArnFromKiroCli(): string | undefined {
+  const dbPath = getCliDbPath()
+  if (!existsSync(dbPath)) return undefined
+
+  let cliDb: Database | undefined
+  try {
+    cliDb = new Database(dbPath, { readonly: true })
+    cliDb.run('PRAGMA busy_timeout = 5000')
+
+    const row = cliDb
+      .prepare('SELECT value FROM state WHERE key = ?')
+      .get('api.codewhisperer.profile') as any
+      
+    const parsed = safeJsonParse(row?.value)
+    const arn = parsed?.arn || parsed?.profileArn || parsed?.profile_arn
+    
+    return typeof arn === 'string' && arn.trim() ? arn.trim() : undefined
+  } catch {
+    return undefined
+  } finally {
+    try {
+      cliDb?.close()
+    } catch {
+      // ignore
+    }
+  }
+}
+```
+
+## Regional Endpoints
+
+IAM Identity Center uses regional OIDC endpoints:
+
+<CodeGroup>
+```typescript OIDC Regions
+// Identity Center OIDC endpoint (sso_region)
+const ssoOIDCEndpoint = `https://oidc.${oidcRegion}.amazonaws.com`
+
+// Examples:
+// us-east-1: https://oidc.us-east-1.amazonaws.com
+// us-west-2: https://oidc.us-west-2.amazonaws.com
+// eu-west-1: https://oidc.eu-west-1.amazonaws.com
+```
+
+```typescript Service Regions
+// Q Developer API endpoint (service region, extracted from profile ARN)
+const serviceEndpoint = `https://q.${serviceRegion}.amazonaws.com`
+
+// Examples:
+// us-east-1: https://q.us-east-1.amazonaws.com
+// us-west-2: https://q.us-west-2.amazonaws.com
+```
+</CodeGroup>
+
+<Warning>
+The **OIDC region** (where Identity Center is configured) may differ from the **service region** (where Q Developer APIs run). The plugin extracts the service region from your profile ARN.
+</Warning>
+
+## Region Extraction from ARN
+
+```typescript
+// From: src/constants.ts:28-36
+export function extractRegionFromArn(arn: string | undefined): KiroRegion | undefined {
+  if (!arn) return undefined
+  const parts = arn.split(':')
+  if (parts.length < 6) return undefined
+  if (parts[0] !== 'arn') return undefined
+  const region = parts[3]
+  if (typeof region !== 'string' || !region) return undefined
+  return isValidRegion(region) ? (region as KiroRegion) : undefined
+}
+```
+
+Example profile ARN:
+```
+arn:aws:q:us-east-1:123456789012:profile/QDevProfile-us-east-1
+                ^
+                service region extracted here
+```
+
+## Credential Storage
+
+IAM Identity Center credentials include additional fields:
+
+```typescript
+// From: src/plugin/sync/kiro-cli.ts:178-197
+await kiroDb.upsertAccount({
+  id,                           // Deterministic hash
+  email: resolvedEmail,         // User's email from SSO
+  authMethod: 'idc',           // IAM Identity Center
+  region: serviceRegion,        // Extracted from profile ARN or config
+  oidcRegion,                   // OIDC region (sso_region)
+  clientId,                     // OAuth client ID from device registration
+  clientSecret,                 // OAuth client secret from device registration
+  profileArn,                   // Q Developer profile ARN
+  startUrl,                     // Organization's Identity Center URL
+  refreshToken,                 // OAuth refresh token
+  accessToken,                  // OAuth access token
+  expiresAt: cliExpiresAt,     // Token expiration timestamp
+  rateLimitResetTime: 0,
+  isHealthy: true,
+  failCount: 0,
+  usedCount,                    // Current usage count
+  limitCount,                   // Daily quota limit
+  lastSync: Date.now()
+})
+```
+
+### Encoded Refresh Token
+
+For IAM Identity Center, refresh tokens are encoded with client credentials:
+
+```typescript
+// From: src/kiro/auth.ts:19-25
+export function encodeRefreshToken(parts: RefreshParts): string {
+  if (parts.authMethod === 'idc') {
+    if (!parts.clientId || !parts.clientSecret) throw new Error('Missing credentials')
+    return `${parts.refreshToken}|${parts.clientId}|${parts.clientSecret}|idc`
+  }
+  return `${parts.refreshToken}|desktop`
+}
+```
+
+<Info>
+The encoded format preserves OIDC client credentials needed for token refresh operations.
+</Info>
+
+## Configuration
+
+Configure IAM Identity Center defaults in `~/.config/opencode/kiro.json`:
+
+```json
+{
+  "idc_start_url": "https://your-company.awsapps.com/start",
+  "idc_region": "us-east-1",
+  "idc_profile_arn": "arn:aws:q:us-east-1:123456789012:profile/QDevProfile-us-east-1",
+  "default_region": "us-east-1",
+  "auto_sync_kiro_cli": true
+}
+```
+
+### Configuration Options
+
+- **`idc_start_url`**: Default IAM Identity Center portal URL
+- **`idc_region`**: OIDC region for Identity Center (sso_region)
+- **`idc_profile_arn`**: Q Developer profile ARN (auto-detected from Kiro CLI if not set)
+- **`default_region`**: Fallback AWS service region
+- **`auto_sync_kiro_cli`**: Auto-import credentials from Kiro CLI
+
+<Tip>
+Set `idc_start_url` and `idc_region` to skip prompts during `opencode auth login`.
+</Tip>
+
+## Profile ARN Management
+
+### Method 1: Kiro CLI Profile Selection
+
+The recommended method is to use Kiro CLI:
+
+```bash
+# List and select a profile
+kiro-cli profile
+
+# Example profiles:
+# - QDevProfile-us-east-1
+# - QDevProfile-us-west-2
+```
+
+The plugin automatically reads the selected profile from Kiro CLI's database.
+
+### Method 2: Manual Configuration
+
+Alternatively, manually configure the profile ARN:
+
+```json
+{
+  "idc_profile_arn": "arn:aws:q:us-east-1:123456789012:profile/QDevProfile-us-east-1"
+}
+```
+
+### Method 3: Auto-Sync from Kiro CLI
+
+Enable auto-sync to automatically import profile ARNs:
+
+```json
+{
+  "auto_sync_kiro_cli": true
+}
+```
+
+The plugin syncs profile ARNs from Kiro CLI during initialization:
+
+```typescript
+// From: src/plugin/sync/kiro-cli.ts:23-34
+try {
+  const stateRow = cliDb
+    .prepare('SELECT value FROM state WHERE key = ?')
+    .get('api.codewhisperer.profile') as any
+  const parsed = safeJsonParse(stateRow?.value)
+  const arn = parsed?.arn || parsed?.profileArn || parsed?.profile_arn
+  if (typeof arn === 'string' && arn.trim()) activeProfileArn = arn.trim()
+} catch {
+  // Ignore state read failures; token import can proceed.
+}
+```
+
+## Troubleshooting
+
+<Accordion title="Error: 403 AccessDeniedException / User is not authorized">
+  This error occurs when a profile ARN is required but not provided.
+  
+  **Fix:**
+  
+  1. Run `kiro-cli profile` and select a profile
+  2. Retry authentication: `opencode auth login`
+  
+  Or manually configure the profile ARN:
+  
+  ```json
+  {
+    "idc_profile_arn": "arn:aws:q:us-east-1:123456789012:profile/QDevProfile-us-east-1"
+  }
+  ```
+</Accordion>
+
+<Accordion title="/connect command doesn't prompt for start URL">
+  The TUI `/connect` flow currently doesn't display plugin OAuth prompts.
+  
+  **Workaround:**
+  
+  Use `opencode auth login` instead, or pre-configure defaults:
+  
+  ```json
+  {
+    "idc_start_url": "https://your-company.awsapps.com/start",
+    "idc_region": "us-east-1"
+  }
+  ```
+</Accordion>
+
+<Accordion title="Token refresh fails with 401/403">
+  IAM Identity Center tokens may expire if:
+  
+  - Your SSO session expired
+  - Profile permissions were revoked
+  - OIDC client registration is invalid
+  
+  **Fix:**
+  
+  Re-authenticate to create a new session:
+  
+  ```bash
+  opencode auth login
+  ```
+</Accordion>
+
+<Accordion title="Plugin can't find profile ARN">
+  If auto-detection fails:
+  
+  1. Ensure Kiro CLI is installed and you've run `kiro-cli profile` at least once
+  2. Check the Kiro CLI database exists:
+     - Linux/macOS: `~/.local/share/kiro-cli/data.sqlite3`
+     - Windows: `%APPDATA%\kiro-cli\data.sqlite3`
+  3. Manually configure `idc_profile_arn` in `~/.config/opencode/kiro.json`
+</Accordion>
+
+<Accordion title="Wrong region selected">
+  If requests fail with region errors:
+  
+  1. Check your profile ARN region matches your Identity Center region
+  2. Verify `idc_region` in config matches your organization's OIDC region
+  3. Ensure `default_region` is set correctly
+</Accordion>
+
+## Security Considerations
+
+<Warning>
+**Never commit credentials to version control:**
+
+- `~/.config/opencode/kiro.db` contains access tokens
+- `~/.config/opencode/kiro.json` may contain profile ARNs
+
+Add these to your `.gitignore` if working in a repository.
+</Warning>
+
+### OIDC Client Credentials
+
+IAM Identity Center requires OIDC client credentials for token operations:
+
+- **Client ID**: Public identifier for the registered OIDC client
+- **Client Secret**: Secret key for authenticating token refresh requests
+
+These are stored securely in the SQLite database and never logged.
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="AWS Builder ID" icon="user" href="/auth/aws-builder-id">
+    Switch to AWS Builder ID for personal accounts
+  </Card>
+  <Card title="Kiro CLI Sync" icon="rotate" href="/auth/kiro-cli-sync">
+    Automatically sync credentials from Kiro CLI
+  </Card>
+</CardGroup>

@@ -1,0 +1,673 @@
+---
+title: "Kiro CLI Sync"
+description: "Automatically sync authentication credentials from Kiro CLI to OpenCode"
+---
+
+The Kiro CLI sync feature automatically imports authentication sessions from the Kiro CLI SQLite database, eliminating the need to authenticate separately in OpenCode.
+
+## Overview
+
+Kiro CLI sync provides:
+
+- **Zero-configuration authentication**: Use existing Kiro CLI credentials automatically
+- **Automatic token import**: Reads both AWS Builder ID and IAM Identity Center sessions
+- **Device registration sync**: Imports OIDC client credentials for token refresh
+- **Profile ARN detection**: Auto-detects active Q Developer profiles
+- **Bi-directional sync**: Updates Kiro CLI when OpenCode refreshes tokens
+
+<Info>
+This is the **recommended authentication method** as it requires no additional setup after running `kiro-cli login`.
+</Info>
+
+## How It Works
+
+<Steps>
+  <Step title="Authenticate with Kiro CLI">
+    First, authenticate using the official Kiro CLI:
+    
+    ```bash
+    kiro-cli login
+    ```
+    
+    This creates a SQLite database at:
+    - **Linux/macOS**: `~/.local/share/kiro-cli/data.sqlite3`
+    - **Windows**: `%APPDATA%\kiro-cli\data.sqlite3`
+  </Step>
+  
+  <Step title="Enable Auto-Sync in OpenCode">
+    Ensure auto-sync is enabled in `~/.config/opencode/kiro.json`:
+    
+    ```json
+    {
+      "auto_sync_kiro_cli": true
+    }
+    ```
+    
+    This is enabled by default.
+  </Step>
+  
+  <Step title="Automatic Import on Startup">
+    When OpenCode starts, the plugin automatically:
+    
+    1. Reads the Kiro CLI database
+    2. Extracts all authentication tokens
+    3. Imports device registration credentials
+    4. Detects the active profile ARN
+    5. Fetches usage limits
+    6. Stores accounts in OpenCode's database
+    
+    No user interaction required!
+  </Step>
+  
+  <Step title="Continuous Sync">
+    The plugin syncs credentials:
+    
+    - On initialization
+    - When no accounts are available
+    - After token refresh failures
+    - When explicitly triggered
+  </Step>
+</Steps>
+
+## Sync Implementation
+
+### Database Reading
+
+The plugin reads tokens from the Kiro CLI database:
+
+```typescript
+// From: src/plugin/sync/kiro-cli.ts:17-42
+export async function syncFromKiroCli() {
+  const dbPath = getCliDbPath()
+  if (!existsSync(dbPath)) return
+  
+  try {
+    const cliDb = new Database(dbPath, { readonly: true })
+    cliDb.run('PRAGMA busy_timeout = 5000')
+    
+    // Read all authentication tokens
+    const rows = cliDb.prepare('SELECT key, value FROM auth_kv').all() as any[]
+    
+    // Read active profile ARN from state table
+    let activeProfileArn: string | undefined
+    try {
+      const stateRow = cliDb
+        .prepare('SELECT value FROM state WHERE key = ?')
+        .get('api.codewhisperer.profile') as any
+      const parsed = safeJsonParse(stateRow?.value)
+      const arn = parsed?.arn || parsed?.profileArn || parsed?.profile_arn
+      if (typeof arn === 'string' && arn.trim()) activeProfileArn = arn.trim()
+    } catch {
+      // Ignore state read failures; token import can proceed.
+    }
+    
+    // ... token processing ...
+    
+    cliDb.close()
+  } catch (e) {
+    logger.error('Sync failed', e)
+  }
+}
+```
+
+### Token Type Detection
+
+The plugin automatically detects AWS Builder ID vs IAM Identity Center tokens:
+
+```typescript
+// From: src/plugin/sync/kiro-cli.ts:42-71
+for (const row of rows) {
+  if (row.key.includes(':token')) {
+    const data = safeJsonParse(row.value)
+    if (!data) continue
+
+    // Detect auth method from key name
+    const isIdc = row.key.includes('odic')  // "odic" = OIDC = IAM Identity Center
+    const authMethod = isIdc ? 'idc' : 'desktop'
+    
+    const oidcRegion = normalizeRegion(data.region)
+    
+    // Extract profile ARN (IAM Identity Center only)
+    let profileArn: string | undefined = data.profile_arn || data.profileArn
+    if (!profileArn && isIdc) {
+      profileArn = activeProfileArn || readActiveProfileArnFromKiroCli()
+    }
+    
+    // Determine service region from profile ARN or default
+    const serviceRegion = extractRegionFromArn(profileArn) || oidcRegion
+    
+    // Extract start URL (IAM Identity Center only)
+    const startUrl: string | undefined =
+      typeof data.start_url === 'string' ? data.start_url :
+      typeof data.startUrl === 'string' ? data.startUrl : undefined
+    
+    const accessToken = data.access_token || data.accessToken || ''
+    const refreshToken = data.refresh_token || data.refreshToken
+    if (!refreshToken) continue
+    
+    // ... credential processing ...
+  }
+}
+```
+
+### Device Registration Sync
+
+For IAM Identity Center, the plugin syncs OIDC client credentials:
+
+```typescript
+// From: src/plugin/sync/kiro-cli.ts:36-40
+// Find device registration in auth_kv table
+const deviceRegRow = rows.find(
+  (r) => typeof r?.key === 'string' && r.key.includes('device-registration')
+)
+const deviceReg = safeJsonParse(deviceRegRow?.value)
+const regCreds = deviceReg ? findClientCredsRecursive(deviceReg) : {}
+```
+
+```typescript
+// From: src/plugin/sync/kiro-cli.ts:64-71
+// Extract client credentials from device registration or token data
+const clientId = data.client_id || data.clientId || (isIdc ? regCreds.clientId : undefined)
+const clientSecret =
+  data.client_secret || data.clientSecret || (isIdc ? regCreds.clientSecret : undefined)
+
+if (authMethod === 'idc' && (!clientId || !clientSecret)) {
+  logger.warn('Kiro CLI sync: missing IDC device credentials; skipping token import')
+  continue
+}
+```
+
+<Info>
+OIDC client credentials are required to refresh IAM Identity Center tokens. The plugin recursively searches the device registration object to find them.
+</Info>
+
+### Recursive Credential Search
+
+```typescript
+// From: src/plugin/sync/kiro-cli-parser.ts:42-70
+export function findClientCredsRecursive(input: unknown): {
+  clientId?: string
+  clientSecret?: string
+} {
+  const root = input as any
+  if (!root || typeof root !== 'object') return {}
+
+  const stack: any[] = [root]
+  const visited = new Set<any>()
+  
+  while (stack.length) {
+    const cur = stack.pop()
+    if (!cur || typeof cur !== 'object') continue
+    if (visited.has(cur)) continue
+    visited.add(cur)
+
+    const clientId = cur.client_id || cur.clientId
+    const clientSecret = cur.client_secret || cur.clientSecret
+    if (typeof clientId === 'string' && typeof clientSecret === 'string') {
+      if (clientId && clientSecret) return { clientId, clientSecret }
+    }
+
+    if (Array.isArray(cur)) {
+      for (const v of cur) stack.push(v)
+      continue
+    }
+    for (const v of Object.values(cur)) stack.push(v)
+  }
+  return {}
+}
+```
+
+### Usage Limits Fetching
+
+The plugin fetches usage limits and email addresses during sync:
+
+```typescript
+// From: src/plugin/sync/kiro-cli.ts:76-107
+let usedCount = 0
+let limitCount = 0
+let email: string | undefined
+let usageOk = false
+
+try {
+  const authForUsage: any = {
+    refresh: '',
+    access: accessToken,
+    expires: cliExpiresAt,
+    authMethod,
+    region: serviceRegion,
+    profileArn,
+    clientId,
+    clientSecret,
+    email: ''
+  }
+  const u = await fetchUsageLimits(authForUsage)
+  usedCount = u.usedCount || 0
+  limitCount = u.limitCount || 0
+  if (typeof u.email === 'string' && u.email) {
+    email = u.email
+    usageOk = true
+  }
+} catch (e) {
+  logger.warn('Kiro CLI sync: failed to fetch usage/email; falling back', {
+    authMethod,
+    serviceRegion,
+    oidcRegion
+  })
+  logger.debug('Kiro CLI sync: usage fetch error', e)
+}
+```
+
+### Placeholder Email Handling
+
+If email lookup fails (offline/network issues), the plugin creates a deterministic placeholder:
+
+```typescript
+// From: src/plugin/sync/kiro-cli.ts:109-126
+const all = kiroDb.getAccounts()
+if (!email) {
+  let existing: any | undefined
+  
+  // Try to find existing account by profile ARN
+  if (profileArn) {
+    existing = all.find((a) => a.auth_method === authMethod && a.profile_arn === profileArn)
+  }
+  
+  // For IAM Identity Center, try finding by client ID
+  if (!existing && authMethod === 'idc' && clientId) {
+    existing = all.find((a) => a.auth_method === 'idc' && a.client_id === clientId)
+  }
+  
+  // Reuse existing email or create placeholder
+  if (existing && typeof existing.email === 'string' && existing.email) {
+    email = existing.email
+  } else {
+    email = makePlaceholderEmail(authMethod, serviceRegion, clientId, profileArn)
+  }
+}
+```
+
+```typescript
+// From: src/plugin/sync/kiro-cli-parser.ts:72-81
+export function makePlaceholderEmail(
+  authMethod: string,
+  region: string,
+  clientId?: string,
+  profileArn?: string
+): string {
+  const seed = `${authMethod}:${region}:${clientId || ''}:${profileArn || ''}`
+  const h = createHash('sha256').update(seed).digest('hex').slice(0, 16)
+  return `${authMethod}-placeholder+${h}@awsapps.local`
+}
+```
+
+<Note>
+Placeholder emails are automatically replaced with real emails once usage lookup succeeds.
+</Note>
+
+### Account Upsert Logic
+
+The plugin uses deterministic account IDs to prevent duplicates:
+
+```typescript
+// From: src/plugin/sync/kiro-cli.ts:128-176
+const resolvedEmail =
+  email || makePlaceholderEmail(authMethod, serviceRegion, clientId, profileArn)
+
+const id = createDeterministicAccountId(resolvedEmail, authMethod, clientId, profileArn)
+
+// Skip if existing account is healthy and token is fresh
+const existingById = all.find((a) => a.id === id)
+if (
+  existingById &&
+  existingById.is_healthy === 1 &&
+  existingById.expires_at >= cliExpiresAt
+) continue
+
+// If we got a real email, mark old placeholder as unhealthy
+if (usageOk) {
+  const placeholderEmail = makePlaceholderEmail(
+    authMethod,
+    serviceRegion,
+    clientId,
+    profileArn
+  )
+  const placeholderId = createDeterministicAccountId(
+    placeholderEmail,
+    authMethod,
+    clientId,
+    profileArn
+  )
+  if (placeholderId !== id) {
+    const placeholderRow = all.find((a) => a.id === placeholderId)
+    if (placeholderRow) {
+      // Mark placeholder as permanently unhealthy
+      await kiroDb.upsertAccount({
+        ...placeholderRow,
+        isHealthy: false,
+        failCount: 10,
+        unhealthyReason: 'Replaced by real email',
+        recoveryTime: Date.now() + 31536000000 // 1 year in the future
+      })
+    }
+  }
+}
+
+// Upsert the account with current credentials
+await kiroDb.upsertAccount({
+  id,
+  email: resolvedEmail,
+  authMethod,
+  region: serviceRegion,
+  oidcRegion,
+  clientId,
+  clientSecret,
+  profileArn,
+  startUrl,
+  refreshToken,
+  accessToken,
+  expiresAt: cliExpiresAt,
+  rateLimitResetTime: 0,
+  isHealthy: true,
+  failCount: 0,
+  usedCount,
+  limitCount,
+  lastSync: Date.now()
+})
+```
+
+## Bi-Directional Sync
+
+When OpenCode refreshes a token, it writes back to Kiro CLI:
+
+```typescript
+// From: src/plugin/sync/kiro-cli.ts:206-226
+export async function writeToKiroCli(acc: any) {
+  const dbPath = getCliDbPath()
+  if (!existsSync(dbPath)) return
+  
+  try {
+    const cliDb = new Database(dbPath)
+    cliDb.run('PRAGMA busy_timeout = 5000')
+    
+    const rows = cliDb.prepare('SELECT key, value FROM auth_kv').all() as any[]
+    const targetKey = acc.authMethod === 'idc' ? 'kirocli:odic:token' : 'kirocli:social:token'
+    const row = rows.find((r) => r.key === targetKey || r.key.endsWith(targetKey))
+    
+    if (row) {
+      const data = JSON.parse(row.value)
+      data.access_token = acc.accessToken
+      data.refresh_token = acc.refreshToken
+      data.expires_at = new Date(acc.expiresAt).toISOString()
+      cliDb.prepare('UPDATE auth_kv SET value = ? WHERE key = ?').run(JSON.stringify(data), row.key)
+    }
+    
+    cliDb.close()
+  } catch (e) {
+    logger.warn('Write back failed', e)
+  }
+}
+```
+
+<Info>
+This ensures Kiro CLI always has the latest tokens when OpenCode refreshes them.
+</Info>
+
+## Kiro CLI Database Schema
+
+### auth_kv Table
+
+Stores authentication tokens:
+
+```sql
+CREATE TABLE auth_kv (
+  key TEXT PRIMARY KEY,
+  value TEXT
+)
+```
+
+**Example keys:**
+- `kirocli:odic:token` - IAM Identity Center token
+- `kirocli:social:token` - AWS Builder ID token
+- `kirocli:odic:device-registration` - OIDC client credentials
+
+**Example value (IAM Identity Center):**
+```json
+{
+  "access_token": "eyJraWQiOi...",
+  "refresh_token": "eyJjdHkiOi...",
+  "expires_at": "2026-03-13T12:00:00.000Z",
+  "region": "us-east-1",
+  "start_url": "https://your-company.awsapps.com/start",
+  "profile_arn": "arn:aws:q:us-east-1:123456789012:profile/QDevProfile-us-east-1",
+  "client_id": "...",
+  "client_secret": "..."
+}
+```
+
+### state Table
+
+Stores active profile selection:
+
+```sql
+CREATE TABLE state (
+  key TEXT PRIMARY KEY,
+  value TEXT
+)
+```
+
+**Example key:**
+- `api.codewhisperer.profile`
+
+**Example value:**
+```json
+{
+  "arn": "arn:aws:q:us-east-1:123456789012:profile/QDevProfile-us-east-1",
+  "profileArn": "arn:aws:q:us-east-1:123456789012:profile/QDevProfile-us-east-1"
+}
+```
+
+## Auto-Sync Initialization
+
+The plugin triggers sync during initialization:
+
+```typescript
+// From: src/core/auth/auth-handler.ts:15-29
+async initialize(): Promise<void> {
+  const { syncFromKiroCli } = await import('../../plugin/sync/kiro-cli.js')
+
+  logger.log('Auth init', { autoSyncKiroCli: !!this.config.auto_sync_kiro_cli })
+  
+  if (this.config.auto_sync_kiro_cli) {
+    logger.log('Kiro CLI sync: start')
+    await syncFromKiroCli()
+    
+    this.repository.invalidateCache()
+    const accounts = await this.repository.findAll()
+    
+    if (this.accountManager) {
+      for (const a of accounts) this.accountManager.addAccount(a)
+    }
+    
+    logger.log('Kiro CLI sync: done', { importedAccounts: accounts.length })
+  }
+}
+```
+
+## Configuration
+
+Configure sync behavior in `~/.config/opencode/kiro.json`:
+
+```json
+{
+  "auto_sync_kiro_cli": true
+}
+```
+
+### Custom Database Path
+
+Override the Kiro CLI database location:
+
+```bash
+export KIROCLI_DB_PATH="/custom/path/to/data.sqlite3"
+```
+
+```typescript
+// From: src/plugin/sync/kiro-cli-parser.ts:5-18
+export function getCliDbPath(): string {
+  const override = process.env.KIROCLI_DB_PATH
+  if (override) return override
+  
+  const p = platform()
+  if (p === 'win32')
+    return join(
+      process.env.APPDATA || join(homedir(), 'AppData', 'Roaming'),
+      'kiro-cli',
+      'data.sqlite3'
+    )
+  if (p === 'darwin')
+    return join(homedir(), 'Library', 'Application Support', 'kiro-cli', 'data.sqlite3')
+  return join(homedir(), '.local', 'share', 'kiro-cli', 'data.sqlite3')
+}
+```
+
+## Troubleshooting
+
+<Accordion title="Sync doesn't import any accounts">
+  If sync completes but no accounts appear:
+  
+  1. Verify Kiro CLI database exists:
+     ```bash
+     # Linux/macOS
+     ls -la ~/.local/share/kiro-cli/data.sqlite3
+     
+     # Windows
+     dir %APPDATA%\kiro-cli\data.sqlite3
+     ```
+  
+  2. Check if Kiro CLI has valid tokens:
+     ```bash
+     kiro-cli status
+     ```
+  
+  3. Ensure tokens haven't expired - re-authenticate with Kiro CLI:
+     ```bash
+     kiro-cli login
+     ```
+</Accordion>
+
+<Accordion title="Plugin never runs sync (Google/GitHub OAuth users)">
+  If you authenticated via Google or GitHub OAuth in Kiro CLI, OpenCode may never trigger the plugin loader.
+  
+  **Workaround:**
+  
+  Add a placeholder entry to `~/.local/share/opencode/auth.json`:
+  
+  ```json
+  {
+    "kiro": {
+      "type": "api",
+      "key": "placeholder"
+    }
+  }
+  ```
+  
+  This tells OpenCode the provider is connected, triggering the plugin loader which runs the sync.
+  
+  <Warning>
+  Ensure `auto_sync_kiro_cli` is `true` in `~/.config/opencode/kiro.json` before applying this workaround.
+  </Warning>
+</Accordion>
+
+<Accordion title="Placeholder email not replaced">
+  If accounts show placeholder emails like `idc-placeholder+abc123@awsapps.local`:
+  
+  1. Check network connectivity - the plugin needs to reach AWS APIs to fetch real emails
+  2. Verify profile ARN is configured (IAM Identity Center only)
+  3. Wait for the next API request - emails are fetched and updated on first use
+  4. Manually trigger sync by restarting OpenCode
+</Accordion>
+
+<Accordion title="Sync fails with 'PRAGMA busy_timeout' error">
+  If Kiro CLI is actively using the database:
+  
+  1. Close Kiro CLI temporarily
+  2. Restart OpenCode to retry sync
+  3. The plugin sets a 5-second busy timeout to wait for database locks
+</Accordion>
+
+<Accordion title="Missing device registration credentials">
+  If IAM Identity Center tokens fail to import:
+  
+  ```
+  Kiro CLI sync: missing IDC device credentials; skipping token import
+  ```
+  
+  This means the OIDC client ID/secret couldn't be found.
+  
+  **Fix:**
+  
+  Re-authenticate with Kiro CLI to create fresh device registration:
+  ```bash
+  kiro-cli login
+  ```
+</Accordion>
+
+## Database Locations
+
+### Kiro CLI Database
+
+- **Linux**: `~/.local/share/kiro-cli/data.sqlite3`
+- **macOS**: `~/Library/Application Support/kiro-cli/data.sqlite3`
+- **Windows**: `%APPDATA%\kiro-cli\data.sqlite3`
+
+### OpenCode Database
+
+- **Linux/macOS**: `~/.config/opencode/kiro.db`
+- **Windows**: `%APPDATA%\opencode\kiro.db`
+
+## Sync Logs
+
+View sync activity in the plugin logs:
+
+```bash
+# Linux/macOS
+tail -f ~/.config/opencode/kiro-logs/plugin.log
+
+# Windows
+type %APPDATA%\opencode\kiro-logs\plugin.log
+```
+
+**Example log output:**
+```
+Auth init { autoSyncKiroCli: true }
+Kiro CLI sync: start
+Kiro CLI sync: done { importedAccounts: 2 }
+```
+
+## Benefits
+
+<CardGroup cols={2}>
+  <Card title="Zero Configuration" icon="magic">
+    No need to authenticate separately in OpenCode - just use Kiro CLI credentials
+  </Card>
+  <Card title="Multi-Account Support" icon="users">
+    Automatically imports all Kiro CLI sessions (Builder ID + Identity Center)
+  </Card>
+  <Card title="Automatic Recovery" icon="shield-check">
+    Syncs credentials after token refresh failures
+  </Card>
+  <Card title="Bi-Directional Sync" icon="arrows-rotate">
+    Keeps Kiro CLI and OpenCode tokens in sync
+  </Card>
+</CardGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="AWS Builder ID" icon="user" href="/auth/aws-builder-id">
+    Learn about AWS Builder ID authentication
+  </Card>
+  <Card title="IAM Identity Center" icon="building" href="/auth/iam-identity-center">
+    Learn about IAM Identity Center authentication
+  </Card>
+</CardGroup>

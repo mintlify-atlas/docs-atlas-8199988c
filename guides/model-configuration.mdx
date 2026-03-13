@@ -1,0 +1,236 @@
+---
+title: "Model Configuration"
+description: "Configure Claude models and thinking variants in your OpenCode setup"
+---
+
+The Kiro Auth plugin provides access to multiple Claude models through AWS Kiro (CodeWhisperer), including standard and extended thinking modes with configurable budgets.
+
+## Available Models
+
+The plugin supports the following Claude models:
+
+<CardGroup cols={2}>
+  <Card title="Claude Sonnet 4.5" icon="brain">
+    200K context window with text, image, and PDF support
+  </Card>
+  <Card title="Claude Sonnet 4.6" icon="sparkles">
+    Latest Sonnet version with enhanced capabilities
+  </Card>
+  <Card title="Claude Opus 4.5" icon="rocket">
+    Premium model with 200K context
+  </Card>
+  <Card title="Claude Haiku 4.5" icon="bolt">
+    Fast, efficient model for quick tasks
+  </Card>
+</CardGroup>
+
+## Complete Model Configuration
+
+Add the following configuration to your `opencode.json` or `opencode.jsonc`:
+
+```json
+{
+  "plugin": ["@zhafron/opencode-kiro-auth"],
+  "provider": {
+    "kiro": {
+      "models": {
+        "claude-sonnet-4-5": {
+          "name": "Claude Sonnet 4.5",
+          "limit": { "context": 200000, "output": 64000 },
+          "modalities": { "input": ["text", "image", "pdf"], "output": ["text"] }
+        },
+        "claude-sonnet-4-5-thinking": {
+          "name": "Claude Sonnet 4.5 Thinking",
+          "limit": { "context": 200000, "output": 64000 },
+          "modalities": { "input": ["text", "image", "pdf"], "output": ["text"] },
+          "variants": {
+            "low": { "thinkingConfig": { "thinkingBudget": 8192 } },
+            "medium": { "thinkingConfig": { "thinkingBudget": 16384 } },
+            "max": { "thinkingConfig": { "thinkingBudget": 32768 } }
+          }
+        },
+        "claude-sonnet-4-6": {
+          "name": "Claude Sonnet 4.6",
+          "limit": { "context": 200000, "output": 64000 },
+          "modalities": { "input": ["text", "image", "pdf"], "output": ["text"] }
+        },
+        "claude-sonnet-4-6-thinking": {
+          "name": "Claude Sonnet 4.6 Thinking",
+          "limit": { "context": 200000, "output": 64000 },
+          "modalities": { "input": ["text", "image", "pdf"], "output": ["text"] },
+          "variants": {
+            "low": { "thinkingConfig": { "thinkingBudget": 8192 } },
+            "medium": { "thinkingConfig": { "thinkingBudget": 16384 } },
+            "max": { "thinkingConfig": { "thinkingBudget": 32768 } }
+          }
+        },
+        "claude-haiku-4-5": {
+          "name": "Claude Haiku 4.5",
+          "limit": { "context": 200000, "output": 64000 },
+          "modalities": { "input": ["text", "image"], "output": ["text"] }
+        },
+        "claude-opus-4-5": {
+          "name": "Claude Opus 4.5",
+          "limit": { "context": 200000, "output": 64000 },
+          "modalities": { "input": ["text", "image", "pdf"], "output": ["text"] }
+        },
+        "claude-opus-4-5-thinking": {
+          "name": "Claude Opus 4.5 Thinking",
+          "limit": { "context": 200000, "output": 64000 },
+          "modalities": { "input": ["text", "image", "pdf"], "output": ["text"] },
+          "variants": {
+            "low": { "thinkingConfig": { "thinkingBudget": 8192 } },
+            "medium": { "thinkingConfig": { "thinkingBudget": 16384 } },
+            "max": { "thinkingConfig": { "thinkingBudget": 32768 } }
+          }
+        },
+        "claude-opus-4-6": {
+          "name": "Claude Opus 4.6",
+          "limit": { "context": 200000, "output": 64000 },
+          "modalities": { "input": ["text", "image", "pdf"], "output": ["text"] }
+        },
+        "claude-opus-4-6-thinking": {
+          "name": "Claude Opus 4.6 Thinking",
+          "limit": { "context": 200000, "output": 64000 },
+          "modalities": { "input": ["text", "image", "pdf"], "output": ["text"] },
+          "variants": {
+            "low": { "thinkingConfig": { "thinkingBudget": 8192 } },
+            "medium": { "thinkingConfig": { "thinkingBudget": 16384 } },
+            "max": { "thinkingConfig": { "thinkingBudget": 32768 } }
+          }
+        },
+        "claude-opus-4-6-1m": {
+          "name": "Claude Opus 4.6 (1M Context)",
+          "limit": { "context": 1000000, "output": 64000 },
+          "modalities": { "input": ["text", "image", "pdf"], "output": ["text"] }
+        },
+        "claude-opus-4-6-1m-thinking": {
+          "name": "Claude Opus 4.6 (1M Context) Thinking",
+          "limit": { "context": 1000000, "output": 64000 },
+          "modalities": { "input": ["text", "image", "pdf"], "output": ["text"] },
+          "variants": {
+            "low": { "thinkingConfig": { "thinkingBudget": 8192 } },
+            "medium": { "thinkingConfig": { "thinkingBudget": 16384 } },
+            "max": { "thinkingConfig": { "thinkingBudget": 32768 } }
+          }
+        },
+        "claude-sonnet-4-5-1m": {
+          "name": "Claude Sonnet 4.5 (1M Context)",
+          "limit": { "context": 1000000, "output": 64000 },
+          "modalities": { "input": ["text", "image", "pdf"], "output": ["text"] }
+        },
+        "claude-sonnet-4-6-1m": {
+          "name": "Claude Sonnet 4.6 (1M Context)",
+          "limit": { "context": 1000000, "output": 64000 },
+          "modalities": { "input": ["text", "image", "pdf"], "output": ["text"] }
+        },
+        "claude-sonnet-4-6-1m-thinking": {
+          "name": "Claude Sonnet 4.6 (1M Context) Thinking",
+          "limit": { "context": 1000000, "output": 64000 },
+          "modalities": { "input": ["text", "image", "pdf"], "output": ["text"] },
+          "variants": {
+            "low": { "thinkingConfig": { "thinkingBudget": 8192 } },
+            "medium": { "thinkingConfig": { "thinkingBudget": 16384 } },
+            "max": { "thinkingConfig": { "thinkingBudget": 32768 } }
+          }
+        },
+        "qwen3-coder-480b": {
+          "name": "Qwen3 Coder 480B",
+          "limit": { "context": 200000, "output": 64000 },
+          "modalities": { "input": ["text"], "output": ["text"] }
+        }
+      }
+    }
+  }
+}
+```
+
+## Understanding Thinking Modes
+
+<Info>
+Thinking modes enable Claude to show its reasoning process before providing a final answer, particularly useful for complex problem-solving.
+</Info>
+
+### Thinking Variants
+
+Models with thinking capabilities support three budget levels:
+
+| Variant | Thinking Budget | Use Case |
+|---------|----------------|----------|
+| `low` | 8,192 tokens | Simple reasoning tasks |
+| `medium` | 16,384 tokens | Moderate complexity problems |
+| `max` | 32,768 tokens | Complex, multi-step reasoning |
+
+### Model Mappings
+
+The plugin internally maps model names to AWS Kiro identifiers:
+
+```typescript
+const MODEL_MAPPING: Record<string, string> = {
+  'claude-sonnet-4-5': 'CLAUDE_SONNET_4_5_20250929_V1_0',
+  'claude-sonnet-4-6': 'claude-sonnet-4.6',
+  'claude-opus-4-5': 'CLAUDE_OPUS_4_5_20251101_V1_0',
+  'claude-haiku-4-5': 'CLAUDE_HAIKU_4_5_20251001_V1_0',
+  // Extended context variants
+  'claude-sonnet-4-5-1m': 'CLAUDE_SONNET_4_5_20250929_LONG_V1_0',
+  'claude-opus-4-6-1m': 'claude-opus-4.6',
+  // Additional models
+  'qwen3-coder-480b': 'QWEN3_CODER_480B_A35B_1_0'
+}
+```
+
+## Context Window Options
+
+<Tip>
+For large codebases or extensive documentation, use the 1M context variants to process more information in a single request.
+</Tip>
+
+### Standard Context (200K)
+
+- **Best for**: Most coding tasks, code reviews, refactoring
+- **Models**: All standard model variants
+- **Token limit**: 200,000 input tokens
+
+### Extended Context (1M)
+
+- **Best for**: Entire repository analysis, large documentation sets
+- **Models**: Sonnet 4.5/4.6 1M, Opus 4.6 1M variants
+- **Token limit**: 1,000,000 input tokens
+
+## Input Modalities
+
+Different models support different input types:
+
+### Text + Image + PDF
+- Claude Sonnet 4.5/4.6 (all variants)
+- Claude Opus 4.5/4.6 (all variants)
+
+### Text + Image
+- Claude Haiku 4.5
+
+### Text Only
+- Qwen3 Coder 480B
+
+<Note>
+All models support a maximum output of 64,000 tokens regardless of their context window size.
+</Note>
+
+## Choosing the Right Model
+
+<Steps>
+  <Step title="Start with Haiku for speed">
+    Use `claude-haiku-4-5` for quick tasks like code completion or simple refactoring where speed matters most.
+  </Step>
+  
+  <Step title="Use Sonnet for balance">
+    Choose `claude-sonnet-4-6` for most development tasks requiring high-quality responses with reasonable speed.
+  </Step>
+  
+  <Step title="Reserve Opus for complexity">
+    Select `claude-opus-4-6` when you need the highest quality for complex architectural decisions or challenging debugging.
+  </Step>
+  
+  <Step title="Enable thinking for reasoning">
+    Add the `-thinking` suffix when you want to see the model's reasoning process, especially for complex problem-solving.
+  </Step>
+</Steps>

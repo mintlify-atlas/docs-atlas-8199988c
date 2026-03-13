@@ -1,0 +1,586 @@
+---
+title: "Advanced Configuration Options"
+description: "Fine-tune request handling, rate limits, timeouts, and debugging for optimal performance"
+---
+
+The Kiro Auth plugin provides advanced configuration options for fine-grained control over request handling, error recovery, and token management.
+
+## Authentication Configuration
+
+Configure authentication methods and AWS service connection details.
+
+### IAM Identity Center (SSO)
+
+<ParamField path="idc_start_url" type="string" optional>
+  IAM Identity Center (SSO) Start URL for your organization.
+  
+  **Format:** `https://your-company.awsapps.com/start`
+  
+  **Example:**
+  ```json
+  {
+    "idc_start_url": "https://d-1234567890.awsapps.com/start"
+  }
+  ```
+  
+  <Info>
+  Leave unset to default to AWS Builder ID authentication.
+  </Info>
+</ParamField>
+
+<ParamField path="idc_region" type="enum" default="us-east-1">
+  IAM Identity Center (SSO OIDC) region for authentication.
+  
+  **Common values:** `us-east-1`, `us-west-2`, `eu-west-1`, `ap-southeast-1`
+  
+  **Example:**
+  ```json
+  {
+    "idc_region": "us-west-2"
+  }
+  ```
+  
+  <Tip>
+  This is the SSO region, which may differ from your default AWS region.
+  </Tip>
+</ParamField>
+
+<ParamField path="idc_profile_arn" type="string" optional>
+  Profile ARN for IAM Identity Center authentication.
+  
+  **Format:** `arn:aws:sso::123456789012:profile/QDevProfile-us-east-1`
+  
+  **Auto-detection:** The plugin automatically reads this from `kiro-cli` database if available.
+  
+  **Example:**
+  ```json
+  {
+    "idc_profile_arn": "arn:aws:sso::123456789012:profile/QDevProfile-us-east-1"
+  }
+  ```
+  
+  <Warning>
+  Required for IAM Identity Center. If missing, API requests may fail with `AccessDeniedException`.
+  </Warning>
+</ParamField>
+
+### Kiro CLI Integration
+
+<ParamField path="auto_sync_kiro_cli" type="boolean" default="true">
+  Automatically import and synchronize sessions from the local `kiro-cli` SQLite database.
+  
+  **Behavior:**
+  - On plugin load, scans `kiro-cli` database for active sessions
+  - Imports tokens, device registrations, and profile settings
+  - Maintains bidirectional sync for token updates
+  
+  **Database Locations:**
+  - Linux/macOS: `~/.config/kiro-cli/database.db`
+  - Windows: `%APPDATA%\kiro-cli\database.db`
+  
+  **Example:**
+  ```json
+  {
+    "auto_sync_kiro_cli": true
+  }
+  ```
+  
+  <Tip>
+  Recommended for users who authenticate via `kiro-cli login`. Disable if you prefer manual authentication via OpenCode.
+  </Tip>
+</ParamField>
+
+### AWS Region Configuration
+
+<ParamField path="default_region" type="enum" default="us-east-1">
+  Default AWS region for CodeWhisperer API requests.
+  
+  **Supported regions:**
+  - US: `us-east-1`, `us-east-2`, `us-west-1`, `us-west-2`
+  - Europe: `eu-west-1`, `eu-west-2`, `eu-central-1`, `eu-north-1`
+  - Asia Pacific: `ap-southeast-1`, `ap-southeast-2`, `ap-northeast-1`, `ap-south-1`
+  - See schema.ts:6-41 for complete list of 40+ supported regions
+  
+  **Example:**
+  ```json
+  {
+    "default_region": "us-west-2"
+  }
+  ```
+  
+  <Info>
+  This setting only affects API endpoint selection. IAM Identity Center region is configured separately via `idc_region`.
+  </Info>
+</ParamField>
+
+## Rate Limiting and Retry Configuration
+
+Control how the plugin handles rate limits and retries failed requests.
+
+<ParamField path="rate_limit_retry_delay_ms" type="number" default="5000">
+  Delay in milliseconds between rate limit retry attempts.
+  
+  **Range:** 1000-60000 (1 second to 1 minute)
+  
+  **Behavior:**
+  - When a request is rate-limited (429 or throttling error)
+  - Plugin waits this duration before retrying
+  - Applies exponential backoff for repeated failures
+  
+  **Example:**
+  ```json
+  {
+    "rate_limit_retry_delay_ms": 10000
+  }
+  ```
+  
+  <Tip>
+  Increase this value if you frequently hit rate limits. Decrease for faster retries in low-traffic scenarios.
+  </Tip>
+</ParamField>
+
+<ParamField path="rate_limit_max_retries" type="number" default="3">
+  Maximum number of retry attempts for rate-limited requests.
+  
+  **Range:** 0-10
+  
+  **Behavior:**
+  - After this many failed retries, the request fails
+  - Each retry uses `rate_limit_retry_delay_ms` delay
+  - Counter resets on successful request
+  
+  **Example:**
+  ```json
+  {
+    "rate_limit_max_retries": 5
+  }
+  ```
+  
+  <Warning>
+  Setting this too high may cause long delays. Setting to 0 disables retries entirely.
+  </Warning>
+</ParamField>
+
+### Retry Strategy Examples
+
+<CodeGroup>
+```json Aggressive Retries
+{
+  "rate_limit_max_retries": 5,
+  "rate_limit_retry_delay_ms": 10000
+}
+```
+
+```json Conservative Retries
+{
+  "rate_limit_max_retries": 2,
+  "rate_limit_retry_delay_ms": 3000
+}
+```
+
+```json No Retries
+{
+  "rate_limit_max_retries": 0
+}
+```
+</CodeGroup>
+
+## Request Handling Configuration
+
+Fine-tune request lifecycle behavior and prevent infinite loops.
+
+<ParamField path="max_request_iterations" type="number" default="20">
+  Maximum number of loop iterations for request processing.
+  
+  **Range:** 5-1000
+  
+  **Purpose:**
+  - Prevents infinite loops in request handling
+  - Each iteration may include: account selection, token refresh, retry logic
+  - Protects against edge cases where requests never complete
+  
+  **Example:**
+  ```json
+  {
+    "max_request_iterations": 50
+  }
+  ```
+  
+  <Info>
+  Normal requests complete in 1-3 iterations. This limit only applies in exceptional cases.
+  </Info>
+</ParamField>
+
+<ParamField path="request_timeout_ms" type="number" default="120000">
+  Maximum time in milliseconds to wait for a request to complete.
+  
+  **Range:** 30000-600000 (30 seconds to 10 minutes)
+  
+  **Behavior:**
+  - Applies to the entire request lifecycle (including retries)
+  - Streaming responses may take longer for large contexts
+  - Timeout includes token refresh and account selection time
+  
+  **Example:**
+  ```json
+  {
+    "request_timeout_ms": 180000
+  }
+  ```
+  
+  <Tip>
+  Increase for large context windows or slow network connections. Decrease to fail fast.
+  </Tip>
+</ParamField>
+
+## Token Management
+
+Configure token refresh behavior and expiration handling.
+
+<ParamField path="token_expiry_buffer_ms" type="number" default="300000">
+  Buffer time in milliseconds before token expiration to trigger refresh.
+  
+  **Range:** 30000-300000 (30 seconds to 5 minutes)
+  
+  **Behavior:**
+  - Tokens are refreshed proactively before they expire
+  - Prevents authentication failures mid-request
+  - Formula: `refresh if (expiresAt - now) < buffer`
+  
+  **Example:**
+  ```json
+  {
+    "token_expiry_buffer_ms": 600000
+  }
+  ```
+  
+  <Info>
+  Default 5-minute buffer provides good balance between freshness and refresh frequency.
+  </Info>
+</ParamField>
+
+### Token Refresh Logic
+
+```typescript
+// Simplified token expiry check
+const now = Date.now()
+const expiresAt = account.expiresAt
+const buffer = config.token_expiry_buffer_ms
+
+if (expiresAt - now < buffer) {
+  // Token is expiring soon, refresh it
+  await refreshToken(account)
+}
+```
+
+<Tip>
+Increase `token_expiry_buffer_ms` if you experience token expiration errors during long-running operations.
+</Tip>
+
+## Usage Tracking Configuration
+
+Control usage metrics synchronization and display.
+
+<ParamField path="usage_tracking_enabled" type="boolean" default="true">
+  Enable usage tracking and quota monitoring.
+  
+  **Features when enabled:**
+  - Fetches current usage from AWS APIs after each request
+  - Updates `usedCount` and `limitCount` for each account
+  - Displays toast notifications with quota status
+  - Enables quota-aware account selection (for `lowest-usage` strategy)
+  
+  **Example:**
+  ```json
+  {
+    "usage_tracking_enabled": true
+  }
+  ```
+  
+  <Warning>
+  Required for `lowest-usage` account selection strategy. Disabling will fall back to timestamp-based selection.
+  </Warning>
+</ParamField>
+
+<ParamField path="usage_sync_max_retries" type="number" default="3">
+  Maximum retry attempts for usage synchronization.
+  
+  **Range:** 0-5
+  
+  **Behavior:**
+  - After each request, plugin attempts to fetch usage data
+  - If fetch fails, retries up to this many times
+  - Failure doesn't affect request success (non-blocking)
+  
+  **Example:**
+  ```json
+  {
+    "usage_sync_max_retries": 5
+  }
+  ```
+  
+  <Info>
+  Usage sync is best-effort. Failed syncs don't block requests but may affect account selection accuracy.
+  </Info>
+</ParamField>
+
+## Debugging Configuration
+
+Enable detailed logging for troubleshooting.
+
+<ParamField path="enable_log_api_request" type="boolean" default="false">
+  Enable detailed API request and response logging.
+  
+  **Logged information:**
+  - Full request URL and headers
+  - Request body (sanitized)
+  - Response status and headers
+  - Response body (first 1000 characters)
+  - Token refresh operations
+  - Account selection decisions
+  
+  **Example:**
+  ```json
+  {
+    "enable_log_api_request": true
+  }
+  ```
+  
+  <Warning>
+  May log sensitive information. Only enable for debugging and disable in production.
+  </Warning>
+</ParamField>
+
+### Debug Logging Example
+
+With `enable_log_api_request: true`:
+
+```text
+[kiro] API Request: POST https://codewhisperer.us-east-1.amazonaws.com/...
+[kiro] Headers: {authorization: Bearer eyJ..., x-amz-date: ...}
+[kiro] Body: {conversationState: {...}}
+[kiro] Response: 200 OK
+[kiro] Account: user@example.com (id: abc123)
+[kiro] Usage: 150/1000 (15%)
+```
+
+<Tip>
+Use environment variable for temporary debugging: `KIRO_ENABLE_LOG_API_REQUEST=true opencode`
+</Tip>
+
+## Legacy Configuration Options
+
+The following options are preserved for compatibility but are no longer used:
+
+<ParamField path="auth_server_port_start" type="number" default="19847">
+  **Status:** Deprecated / Ignored
+  
+  **Range:** 1024-65535
+  
+  Previously used for local OAuth server. The plugin now uses direct browser-based authentication without a local server.
+</ParamField>
+
+<ParamField path="auth_server_port_range" type="number" default="10">
+  **Status:** Deprecated / Ignored
+  
+  **Range:** 1-100
+  
+  Previously used for local OAuth server port range. No longer applicable.
+</ParamField>
+
+<Info>
+These options can be safely removed from your configuration. They are retained for backward compatibility.
+</Info>
+
+## Complete Configuration Reference
+
+Here's a complete configuration file with all available options:
+
+<CodeGroup>
+```json Complete Configuration
+{
+  "$schema": "https://example.com/kiro-config.schema.json",
+  
+  "idc_start_url": "https://your-company.awsapps.com/start",
+  "idc_region": "us-east-1",
+  "idc_profile_arn": "arn:aws:sso::123456789012:profile/QDevProfile",
+  
+  "auto_sync_kiro_cli": true,
+  "account_selection_strategy": "lowest-usage",
+  "default_region": "us-east-1",
+  
+  "rate_limit_retry_delay_ms": 5000,
+  "rate_limit_max_retries": 3,
+  "max_request_iterations": 20,
+  "request_timeout_ms": 120000,
+  
+  "token_expiry_buffer_ms": 300000,
+  
+  "usage_tracking_enabled": true,
+  "usage_sync_max_retries": 3,
+  
+  "enable_log_api_request": false,
+  
+  "auth_server_port_start": 19847,
+  "auth_server_port_range": 10
+}
+```
+
+```json Production Configuration
+{
+  "idc_start_url": "https://your-company.awsapps.com/start",
+  "idc_region": "us-east-1",
+  "account_selection_strategy": "lowest-usage",
+  "usage_tracking_enabled": true,
+  "rate_limit_max_retries": 5,
+  "request_timeout_ms": 180000
+}
+```
+
+```json Development Configuration
+{
+  "auto_sync_kiro_cli": true,
+  "enable_log_api_request": true,
+  "rate_limit_retry_delay_ms": 2000,
+  "rate_limit_max_retries": 1
+}
+```
+</CodeGroup>
+
+## Configuration Validation
+
+The plugin uses Zod schema validation to ensure all configuration values are valid:
+
+```typescript
+// From schema.ts:44-74
+export const KiroConfigSchema = z.object({
+  idc_start_url: z.string().url().optional(),
+  idc_region: RegionSchema.optional(),
+  account_selection_strategy: AccountSelectionStrategySchema.default('lowest-usage'),
+  default_region: RegionSchema.default('us-east-1'),
+  rate_limit_retry_delay_ms: z.number().min(1000).max(60000).default(5000),
+  rate_limit_max_retries: z.number().min(0).max(10).default(3),
+  max_request_iterations: z.number().min(5).max(1000).default(20),
+  request_timeout_ms: z.number().min(30000).max(600000).default(120000),
+  token_expiry_buffer_ms: z.number().min(30000).max(300000).default(300000),
+  usage_sync_max_retries: z.number().min(0).max(5).default(3),
+  usage_tracking_enabled: z.boolean().default(true),
+  auto_sync_kiro_cli: z.boolean().default(true),
+  enable_log_api_request: z.boolean().default(false)
+})
+```
+
+<Info>
+Invalid values trigger validation warnings and fall back to defaults. Check logs for validation errors.
+</Info>
+
+## Environment Variable Reference
+
+All configuration options can be overridden via environment variables:
+
+```bash
+# Authentication
+KIRO_DEFAULT_REGION="us-west-2"
+
+# Rate Limiting
+KIRO_RATE_LIMIT_RETRY_DELAY_MS=10000
+KIRO_RATE_LIMIT_MAX_RETRIES=5
+
+# Request Handling
+KIRO_MAX_REQUEST_ITERATIONS=50
+KIRO_REQUEST_TIMEOUT_MS=180000
+
+# Token Management
+KIRO_TOKEN_EXPIRY_BUFFER_MS=600000
+
+# Usage Tracking
+KIRO_USAGE_TRACKING_ENABLED=true
+KIRO_USAGE_SYNC_MAX_RETRIES=3
+
+# Account Selection
+KIRO_ACCOUNT_SELECTION_STRATEGY="lowest-usage"
+
+# Debugging
+KIRO_ENABLE_LOG_API_REQUEST=true
+```
+
+<Tip>
+Environment variables provide the highest precedence and override all file-based configuration.
+</Tip>
+
+## Troubleshooting Configuration
+
+<Accordion title="Configuration not being applied">
+  **Symptoms:** Changes to `kiro.json` have no effect.
+  
+  **Solutions:**
+  1. Check for JSON syntax errors (trailing commas, missing quotes)
+  2. Verify file is at correct location (`~/.config/opencode/kiro.json`)
+  3. Check logs for validation errors
+  4. Ensure values are within acceptable ranges
+  5. Try environment variable override to test
+</Accordion>
+
+<Accordion title="Token keeps expiring">
+  **Symptoms:** Frequent token refresh or authentication errors.
+  
+  **Solutions:**
+  1. Increase `token_expiry_buffer_ms` to 600000 (10 minutes)
+  2. Check system clock is synchronized
+  3. Verify network stability
+  4. Enable `enable_log_api_request` to debug
+</Accordion>
+
+<Accordion title="Rate limit errors persist">
+  **Symptoms:** Constant 429 errors or throttling.
+  
+  **Solutions:**
+  1. Increase `rate_limit_retry_delay_ms` to 10000+
+  2. Increase `rate_limit_max_retries` to 5
+  3. Enable `lowest-usage` account selection strategy
+  4. Add more accounts to distribute load
+  5. Enable `usage_tracking_enabled` for better account management
+</Accordion>
+
+<Accordion title="Requests timeout">
+  **Symptoms:** Requests fail with timeout errors.
+  
+  **Solutions:**
+  1. Increase `request_timeout_ms` to 300000 (5 minutes)
+  2. Check network connectivity
+  3. Reduce context size if using large prompts
+  4. Verify `max_request_iterations` isn't too low
+</Accordion>
+
+## Best Practices
+
+<Tip>
+**Start with defaults:** Only change configuration when you have a specific need. Defaults are optimized for common use cases.
+</Tip>
+
+<Tip>
+**Use environment variables for testing:** Override config temporarily with environment variables before committing changes.
+</Tip>
+
+<Tip>
+**Enable logging for debugging:** Set `enable_log_api_request: true` temporarily when troubleshooting, then disable for production.
+</Tip>
+
+<Tip>
+**Monitor usage metrics:** Enable `usage_tracking_enabled` to gain visibility into quota consumption and account health.
+</Tip>
+
+<Tip>
+**Document project overrides:** If using project-level config, document why specific values are needed for your project.
+</Tip>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Configuration Overview" icon="gear" href="/config/overview">
+    Return to configuration overview
+  </Card>
+  <Card title="Account Strategies" icon="arrows-rotate" href="/config/account-strategies">
+    Learn about account selection strategies
+  </Card>
+</CardGroup>

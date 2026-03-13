@@ -1,97 +1,142 @@
 ---
-title: "Introduction"
-description: "Welcome to the new home for your documentation"
+title: "OpenCode Kiro Auth"
+description: "Access Claude models through AWS Kiro with intelligent multi-account rotation and quota management"
 ---
 
-## Setting up
+<div style={{
+  background: "linear-gradient(135deg, #94cb04 0%, #545454 100%)",
+  borderRadius: "12px",
+  padding: "48px 32px",
+  color: "#ffffff",
+  marginBottom: "32px"
+}}>
+  <h1 style={{
+    fontSize: "48px",
+    fontWeight: "700",
+    marginBottom: "16px",
+    color: "#ffffff"
+  }}>
+    OpenCode Kiro Auth
+  </h1>
+  <p style={{
+    fontSize: "18px",
+    marginBottom: "24px",
+    color: "#f5f5f5",
+    maxWidth: "800px"
+  }}>
+    Stop hitting Claude API limits. Leverage AWS Kiro with 550+ free requests per account through intelligent multi-account rotation.
+  </p>
+  <div style={{ display: "flex", gap: "12px", flexWrap: "wrap" }}>
+    <a href="/quickstart" style={{
+      background: "#ffffff",
+      color: "#1a1a1a",
+      padding: "12px 24px",
+      borderRadius: "6px",
+      textDecoration: "none",
+      fontWeight: "600",
+      display: "inline-block"
+    }}>
+      Get Started →
+    </a>
+    <a href="https://github.com/tickernelz/opencode-kiro-auth" style={{
+      background: "transparent",
+      color: "#ffffff",
+      padding: "12px 24px",
+      borderRadius: "6px",
+      textDecoration: "none",
+      fontWeight: "600",
+      border: "2px solid #ffffff",
+      display: "inline-block"
+    }}>
+      View on GitHub
+    </a>
+  </div>
+</div>
 
-Get your documentation site up and running in minutes.
+## Key Features
 
-<Card
-  title="Start here"
-  icon="rocket"
-  href="/quickstart"
-  horizontal
->
-  Follow our three step quickstart guide.
-</Card>
-
-## Make it yours
-
-Design a docs site that looks great and empowers your users.
-
-<Columns cols={2}>
-  <Card
-    title="Edit locally"
-    icon="pen-to-square"
-    href="/development"
-  >
-    Edit your docs locally and preview them in real time.
+<CardGroup cols={2}>
+  <Card title="Multiple Auth Methods" icon="key">
+    Support for AWS Builder ID, IAM Identity Center, and automatic Kiro CLI sync
   </Card>
-  <Card
-    title="Customize your site"
-    icon="palette"
-    href="/essentials/settings"
-  >
-    Customize the design and colors of your site to match your brand.
+  <Card title="Intelligent Rotation" icon="rotate">
+    Automatic multi-account rotation prioritizing lowest quota usage
   </Card>
-    <Card
-    title="Set up navigation"
-    icon="map"
-    href="/essentials/navigation"
-  >
-    Organize your docs to help users find what they need and succeed with your product.
+  <Card title="Auto Recovery" icon="shield-check">
+    Exponential backoff for rate limits and automated token refresh
   </Card>
-  <Card
-    title="API documentation"
-    icon="terminal"
-    href="/api-reference/introduction"
-  >
-    Auto-generate API documentation from OpenAPI specifications.
+  <Card title="Claude Models" icon="brain">
+    Full support for Claude Sonnet, Haiku, and Opus including thinking modes
   </Card>
-</Columns>
+  <Card title="Context Management" icon="scissors">
+    Gradual context truncation to prevent error 400 during retries
+  </Card>
+  <Card title="High Performance" icon="database">
+    Efficient account and usage management using native Bun SQLite
+  </Card>
+</CardGroup>
 
-## Create beautiful pages
+## Quick Start
 
-Everything you need to create world-class documentation.
+Get up and running in minutes with these essential guides.
 
-<Columns cols={2}>
-  <Card
-    title="Write with MDX"
-    icon="pen-fancy"
-    href="/essentials/markdown"
-  >
-    Use MDX to style your docs pages.
+<CardGroup cols={2}>
+  <Card title="Installation" icon="download" href="/installation">
+    Add the plugin to your OpenCode configuration
   </Card>
-  <Card
-    title="Code samples"
-    icon="code"
-    href="/essentials/code"
-  >
-    Add sample code to demonstrate how to use your product.
+  <Card title="Quickstart Guide" icon="rocket" href="/quickstart">
+    Complete your first authentication flow
   </Card>
-  <Card
-    title="Images"
-    icon="image"
-    href="/essentials/images"
-  >
-    Display images and other media.
+  <Card title="Model Configuration" icon="sliders" href="/guides/model-configuration">
+    Configure Claude models in opencode.json
   </Card>
-  <Card
-    title="Reusable snippets"
-    icon="recycle"
-    href="/essentials/reusable-snippets"
-  >
-    Write once and reuse across your docs.
+  <Card title="Multi-Account Setup" icon="users" href="/guides/multi-account-setup">
+    Set up multiple AWS accounts for rotation
   </Card>
-</Columns>
+</CardGroup>
 
-## Need inspiration?
+## Authentication Methods
 
-<Card
-  title="See complete examples"
-  icon="stars"
-  href="https://mintlify.com/customers"
->
-  Browse our showcase of exceptional documentation sites.
-</Card>
+Choose the authentication method that works best for your workflow.
+
+<CardGroup cols={3}>
+  <Card title="AWS Builder ID" icon="user" href="/auth/aws-builder-id">
+    Free AWS account authentication
+  </Card>
+  <Card title="IAM Identity Center" icon="building" href="/auth/iam-identity-center">
+    Enterprise SSO integration
+  </Card>
+  <Card title="Kiro CLI Sync" icon="terminal" href="/auth/kiro-cli-sync">
+    Automatic session import
+  </Card>
+</CardGroup>
+
+## API Reference
+
+Explore the complete API surface for advanced integration.
+
+<CardGroup cols={2}>
+  <Card title="Plugin API" icon="plug" href="/api/plugin">
+    KiroOAuthPlugin and createKiroPlugin
+  </Card>
+  <Card title="Type Definitions" icon="code" href="/api/types">
+    TypeScript types and interfaces
+  </Card>
+  <Card title="Configuration" icon="gear" href="/api/config/kiro-config">
+    KiroConfig options and schema
+  </Card>
+  <Card title="Authorization" icon="lock" href="/api/auth/authorize-kiro-idc">
+    OAuth authorization helpers
+  </Card>
+</CardGroup>
+
+## Need Help?
+
+<CardGroup cols={2}>
+  <Card title="Troubleshooting" icon="wrench" href="/troubleshooting/access-denied">
+    Common issues and solutions
+  </Card>
+  <Card title="GitHub Issues" icon="github" href="https://github.com/tickernelz/opencode-kiro-auth/issues">
+    Report bugs or request features
+  </Card>
+</CardGroup>

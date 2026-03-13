@@ -1,0 +1,285 @@
+---
+title: "Installation"
+description: "Install and configure the OpenCode Kiro Auth plugin"
+---
+
+## Prerequisites
+
+Before installing the Kiro Auth plugin, ensure you have:
+
+- **OpenCode** installed and configured
+- **Node.js** 20+ or **Bun** runtime
+- An AWS account (AWS Builder ID or IAM Identity Center access)
+
+<Info>
+The plugin works with both AWS Builder ID (free) and IAM Identity Center (organizational) accounts.
+</Info>
+
+## Install the Plugin
+
+Install the plugin via your preferred package manager:
+
+<CodeGroup>
+```bash npm
+npm install @zhafron/opencode-kiro-auth
+```
+
+```bash yarn
+yarn add @zhafron/opencode-kiro-auth
+```
+
+```bash pnpm
+pnpm add @zhafron/opencode-kiro-auth
+```
+
+```bash bun
+bun add @zhafron/opencode-kiro-auth
+```
+</CodeGroup>
+
+<Note>
+OpenCode automatically installs plugins to `~/.cache/opencode/node_modules` when referenced in configuration.
+</Note>
+
+## Configure OpenCode
+
+Add the plugin and provider configuration to your `opencode.json` or `opencode.jsonc`:
+
+```json opencode.json
+{
+  "plugin": ["@zhafron/opencode-kiro-auth"],
+  "provider": {
+    "kiro": {
+      "models": {
+        "claude-sonnet-4-5": {
+          "name": "Claude Sonnet 4.5",
+          "limit": { "context": 200000, "output": 64000 },
+          "modalities": { "input": ["text", "image", "pdf"], "output": ["text"] }
+        },
+        "claude-sonnet-4-6": {
+          "name": "Claude Sonnet 4.6",
+          "limit": { "context": 200000, "output": 64000 },
+          "modalities": { "input": ["text", "image", "pdf"], "output": ["text"] }
+        },
+        "claude-haiku-4-5": {
+          "name": "Claude Haiku 4.5",
+          "limit": { "context": 200000, "output": 64000 },
+          "modalities": { "input": ["text", "image"], "output": ["text"] }
+        },
+        "claude-opus-4-6": {
+          "name": "Claude Opus 4.6",
+          "limit": { "context": 200000, "output": 64000 },
+          "modalities": { "input": ["text", "image", "pdf"], "output": ["text"] }
+        }
+      }
+    }
+  }
+}
+```
+
+<Tip>
+See the [README](https://github.com/tickernelz/opencode-kiro-auth#readme) for a complete list of all available models including thinking mode variants and 1M context versions.
+</Tip>
+
+## Configure Thinking Mode (Optional)
+
+To enable Claude's thinking mode with configurable reasoning budgets:
+
+```json opencode.json
+{
+  "provider": {
+    "kiro": {
+      "models": {
+        "claude-sonnet-4-6-thinking": {
+          "name": "Claude Sonnet 4.6 Thinking",
+          "limit": { "context": 200000, "output": 64000 },
+          "modalities": { "input": ["text", "image", "pdf"], "output": ["text"] },
+          "variants": {
+            "low": { "thinkingConfig": { "thinkingBudget": 8192 } },
+            "medium": { "thinkingConfig": { "thinkingBudget": 16384 } },
+            "max": { "thinkingConfig": { "thinkingBudget": 32768 } }
+          }
+        }
+      }
+    }
+  }
+}
+```
+
+The thinking budget controls how many tokens Claude can use for internal reasoning:
+
+- **low** (8192): Quick reasoning for simple tasks
+- **medium** (16384): Balanced reasoning for most use cases
+- **max** (32768): Deep reasoning for complex problems
+
+## Plugin Configuration (Optional)
+
+Create a configuration file at `~/.config/opencode/kiro.json` (Linux/macOS) or `%APPDATA%\opencode\kiro.json` (Windows):
+
+```json kiro.json
+{
+  "auto_sync_kiro_cli": true,
+  "account_selection_strategy": "lowest-usage",
+  "default_region": "us-east-1",
+  "rate_limit_retry_delay_ms": 5000,
+  "rate_limit_max_retries": 3,
+  "max_request_iterations": 20,
+  "request_timeout_ms": 120000,
+  "token_expiry_buffer_ms": 300000,
+  "usage_sync_max_retries": 3,
+  "usage_tracking_enabled": true,
+  "enable_log_api_request": false
+}
+```
+
+### Configuration Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `auto_sync_kiro_cli` | `boolean` | `true` | Automatically sync sessions from Kiro CLI |
+| `account_selection_strategy` | `string` | `"lowest-usage"` | Account rotation strategy: `sticky`, `round-robin`, `lowest-usage` |
+| `default_region` | `string` | `"us-east-1"` | AWS region for API requests |
+| `idc_start_url` | `string` | `undefined` | IAM Identity Center Start URL (e.g., `https://your-company.awsapps.com/start`) |
+| `idc_region` | `string` | `"us-east-1"` | IAM Identity Center OIDC region |
+| `idc_profile_arn` | `string` | `undefined` | IAM Identity Center profile ARN |
+| `rate_limit_retry_delay_ms` | `number` | `5000` | Delay between rate limit retries (1000-60000ms) |
+| `rate_limit_max_retries` | `number` | `3` | Maximum retry attempts for rate limits (0-10) |
+| `max_request_iterations` | `number` | `20` | Maximum loop iterations to prevent hangs (5-1000) |
+| `request_timeout_ms` | `number` | `120000` | Request timeout in milliseconds (30000-600000ms) |
+| `token_expiry_buffer_ms` | `number` | `300000` | Token refresh buffer time (30000-300000ms) |
+| `usage_sync_max_retries` | `number` | `3` | Retry attempts for usage sync (0-5) |
+| `usage_tracking_enabled` | `boolean` | `true` | Enable usage tracking and toast notifications |
+| `enable_log_api_request` | `boolean` | `false` | Enable detailed API request logging |
+
+<Warning>
+The `token_expiry_buffer_ms` should be set high enough (default 5 minutes) to ensure tokens are refreshed before expiration.
+</Warning>
+
+## IAM Identity Center Configuration
+
+If you're using IAM Identity Center (organizational SSO), configure these additional settings:
+
+```json kiro.json
+{
+  "idc_start_url": "https://your-company.awsapps.com/start",
+  "idc_region": "us-east-1",
+  "idc_profile_arn": "arn:aws:iam::123456789012:role/QDevProfile-us-east-1"
+}
+```
+
+<Steps>
+  <Step title="Find Your Start URL">
+    Your organization's IAM Identity Center Start URL is typically provided by your AWS administrator. It follows the format `https://your-company.awsapps.com/start`.
+  </Step>
+  
+  <Step title="Determine Region">
+    The `idc_region` is the region where your Identity Center is configured (often `us-east-1`).
+  </Step>
+  
+  <Step title="Get Profile ARN">
+    The profile ARN can be auto-detected if you've used `kiro-cli profile` once. Otherwise, obtain it from your AWS administrator.
+  </Step>
+</Steps>
+
+## Verify Installation
+
+Check that the plugin is loaded:
+
+```bash
+opencode version
+```
+
+You should see the plugin listed in the output.
+
+## Storage Locations
+
+The plugin stores data in the following locations:
+
+<Tabs>
+  <Tab title="Linux/macOS">
+    - **Database**: `~/.config/opencode/kiro.db`
+    - **Configuration**: `~/.config/opencode/kiro.json`
+    - **Logs**: `~/.config/opencode/kiro-logs/plugin.log`
+  </Tab>
+  
+  <Tab title="Windows">
+    - **Database**: `%APPDATA%\opencode\kiro.db`
+    - **Configuration**: `%APPDATA%\opencode\kiro.json`
+    - **Logs**: `%APPDATA%\opencode\kiro-logs\plugin.log`
+  </Tab>
+</Tabs>
+
+## Kiro CLI Integration (Optional)
+
+If you have `kiro-cli` installed, the plugin can automatically import your existing sessions:
+
+<Steps>
+  <Step title="Install Kiro CLI">
+    Follow the [Kiro CLI installation instructions](https://github.com/justlovemaki/kiro-cli) for your platform.
+  </Step>
+  
+  <Step title="Authenticate">
+    Run `kiro-cli login` to authenticate with AWS.
+  </Step>
+  
+  <Step title="Enable Auto-Sync">
+    Ensure `auto_sync_kiro_cli` is `true` in your `kiro.json` (default).
+  </Step>
+  
+  <Step title="Start OpenCode">
+    The plugin will automatically import sessions on startup.
+  </Step>
+</Steps>
+
+<Info>
+Kiro CLI sync reads from the SQLite database at `~/.kiro-cli/kiro.db` and imports active sessions into the plugin's database.
+</Info>
+
+## Troubleshooting Installation
+
+### Plugin Not Found
+
+If OpenCode cannot find the plugin:
+
+1. Verify the plugin is in `opencode.json`:
+   ```json
+   {
+     "plugin": ["@zhafron/opencode-kiro-auth"]
+   }
+   ```
+
+2. Check the plugin is installed:
+   ```bash
+   ls ~/.cache/opencode/node_modules/@zhafron/opencode-kiro-auth
+   ```
+
+3. Reinstall if missing:
+   ```bash
+   npm install -g @zhafron/opencode-kiro-auth
+   ```
+
+### Configuration Not Applied
+
+If your configuration isn't taking effect:
+
+1. Verify the config file location matches your OS
+2. Check JSON syntax is valid (use a JSON validator)
+3. Restart OpenCode to reload configuration
+4. Check logs at `~/.config/opencode/kiro-logs/plugin.log`
+
+### Database Permissions
+
+If you encounter database errors:
+
+```bash
+# Linux/macOS
+chmod 644 ~/.config/opencode/kiro.db
+
+# Windows - check file is not read-only in Properties
+```
+
+## Next Steps
+
+<Card title="Quickstart" icon="rocket" href="/quickstart">
+  Complete authentication and make your first API call
+</Card>

@@ -1,0 +1,207 @@
+---
+title: "Plugin Exports"
+description: "Core plugin exports for integrating Kiro Auth with OpenCode"
+---
+
+## KiroOAuthPlugin
+
+The default plugin instance for Kiro OAuth authentication. This is the primary export for integrating Kiro authentication into OpenCode.
+
+```typescript
+export const KiroOAuthPlugin: (context: PluginContext) => Promise<PluginResult>
+```
+
+### Usage
+
+```typescript
+import { KiroOAuthPlugin } from '@opencode/kiro-auth'
+
+// Use in your OpenCode configuration
+export default {
+  plugins: [KiroOAuthPlugin]
+}
+```
+
+### Returns
+
+Returns a plugin function that provides:
+
+<ResponseField name="auth" type="object" required>
+  Authentication configuration object
+  
+  <ResponseField name="provider" type="string" required>
+    Provider identifier (always `"kiro"`)
+  </ResponseField>
+  
+  <ResponseField name="loader" type="function" required>
+    Async function that initializes authentication and returns API configuration
+    
+    **Returns:**
+    <ResponseField name="apiKey" type="string">
+      API key (empty string for Kiro)
+    </ResponseField>
+    
+    <ResponseField name="baseURL" type="string">
+      Base URL for Kiro API requests with region substitution
+    </ResponseField>
+    
+    <ResponseField name="fetch" type="function">
+      Custom fetch function that handles request authentication and rate limiting
+    </ResponseField>
+  </ResponseField>
+  
+  <ResponseField name="methods" type="AuthMethod[]" required>
+    Array of available authentication methods (IDC, Desktop)
+  </ResponseField>
+</ResponseField>
+
+### Context
+
+The plugin receives a context object with:
+
+<ParamField path="client" type="object" required>
+  OpenCode client instance with TUI methods for showing toasts and notifications
+</ParamField>
+
+<ParamField path="directory" type="string" required>
+  Project directory path for loading configuration files
+</ParamField>
+
+---
+
+## createKiroPlugin
+
+Factory function for creating a custom Kiro plugin instance with a specific provider ID.
+
+```typescript
+export const createKiroPlugin: (id: string) => 
+  (context: PluginContext) => Promise<PluginResult>
+```
+
+### Parameters
+
+<ParamField path="id" type="string" required>
+  Custom provider identifier for the plugin instance
+</ParamField>
+
+### Usage
+
+```typescript
+import { createKiroPlugin } from '@opencode/kiro-auth'
+
+// Create a custom plugin instance
+const CustomKiroPlugin = createKiroPlugin('custom-kiro')
+
+export default {
+  plugins: [CustomKiroPlugin]
+}
+```
+
+### Returns
+
+Returns a plugin function with the same signature as `KiroOAuthPlugin`, but using the custom provider ID.
+
+<Note>
+In most cases, you should use `KiroOAuthPlugin` directly. Use `createKiroPlugin` only if you need multiple Kiro instances with different configurations.
+</Note>
+
+---
+
+## authorizeKiroIDC
+
+Initiates the AWS IAM Identity Center (IDC) device authorization flow for Kiro authentication.
+
+```typescript
+export async function authorizeKiroIDC(
+  region?: KiroRegion,
+  startUrl?: string
+): Promise<KiroIDCAuthorization>
+```
+
+### Parameters
+
+<ParamField path="region" type="KiroRegion">
+  AWS region for the IDC authorization. Defaults to `'us-east-1'` if not specified.
+</ParamField>
+
+<ParamField path="startUrl" type="string">
+  IDC start URL. Defaults to AWS Builder ID start URL if not specified.
+</ParamField>
+
+### Returns
+
+<ResponseField name="KiroIDCAuthorization" type="object">
+  Authorization details for completing the device flow
+  
+  <ResponseField name="verificationUrl" type="string" required>
+    URL where the user should navigate to enter the user code
+  </ResponseField>
+  
+  <ResponseField name="verificationUriComplete" type="string" required>
+    Complete verification URL with user code pre-filled
+  </ResponseField>
+  
+  <ResponseField name="userCode" type="string" required>
+    Code that the user must enter at the verification URL
+  </ResponseField>
+  
+  <ResponseField name="deviceCode" type="string" required>
+    Device code for polling the token endpoint
+  </ResponseField>
+  
+  <ResponseField name="clientId" type="string" required>
+    OAuth client ID from registration
+  </ResponseField>
+  
+  <ResponseField name="clientSecret" type="string" required>
+    OAuth client secret from registration
+  </ResponseField>
+  
+  <ResponseField name="interval" type="number" required>
+    Polling interval in seconds (default: 5)
+  </ResponseField>
+  
+  <ResponseField name="expiresIn" type="number" required>
+    Device code expiration time in seconds (default: 600)
+  </ResponseField>
+  
+  <ResponseField name="region" type="KiroRegion" required>
+    AWS region used for authorization
+  </ResponseField>
+  
+  <ResponseField name="startUrl" type="string" required>
+    IDC start URL used for authorization
+  </ResponseField>
+</ResponseField>
+
+### Usage
+
+```typescript
+import { authorizeKiroIDC } from '@opencode/kiro-auth'
+
+// Start IDC authorization
+const auth = await authorizeKiroIDC('us-west-2', 'https://my-org.awsapps.com/start')
+
+console.log(`Please visit: ${auth.verificationUriComplete}`)
+console.log(`Or enter code: ${auth.userCode} at ${auth.verificationUrl}`)
+
+// Continue with token polling using the returned values
+```
+
+### Error Handling
+
+<Warning>
+This function throws errors if:
+- Client registration fails
+- Device authorization fails
+- Response is missing required fields
+</Warning>
+
+```typescript
+try {
+  const auth = await authorizeKiroIDC()
+  // Handle success
+} catch (error) {
+  console.error('Authorization failed:', error.message)
+}
+```

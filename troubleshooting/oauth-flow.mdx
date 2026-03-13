@@ -1,0 +1,305 @@
+---
+title: "OAuth Flow Issues"
+description: "Troubleshoot authentication flow problems with AWS Builder ID and IAM Identity Center"
+---
+
+OAuth authentication issues can prevent you from successfully authenticating with AWS Kiro services. This guide covers common problems with both **AWS Builder ID** and **IAM Identity Center** authentication flows.
+
+## Authentication Flow Overview
+
+The Kiro plugin supports two OAuth authentication methods:
+
+1. **AWS Builder ID** (personal, no organization)
+2. **IAM Identity Center** (enterprise SSO with custom Start URL)
+
+Both methods use the AWS SSO OIDC device authorization flow:
+
+<Steps>
+  <Step title="Device registration">
+    The plugin registers a new OIDC client with AWS SSO:
+    
+    ```typescript
+    POST {ssoOIDCEndpoint}/client/register
+    {
+      "clientName": "Kiro IDE",
+      "clientType": "public",
+      "scopes": ["sso:account:access", "codewhisperer:*"],
+      "grantTypes": ["urn:ietf:params:oauth:grant-type:device_code", "refresh_token"]
+    }
+    ```
+    
+    Returns `clientId` and `clientSecret` for the session.
+  </Step>
+  
+  <Step title="Device authorization">
+    Request a device code for user authorization:
+    
+    ```typescript
+    POST {ssoOIDCEndpoint}/device_authorization
+    {
+      "clientId": "...",
+      "clientSecret": "...",
+      "startUrl": "https://your-company.awsapps.com/start"
+    }
+    ```
+    
+    Returns `deviceCode`, `userCode`, `verificationUri`, and `verificationUriComplete`.
+  </Step>
+  
+  <Step title="User authorization">
+    The browser opens to `verificationUriComplete`, where you:
+    
+    1. Sign in to AWS (if not already signed in)
+    2. Verify the user code matches
+    3. Approve the authorization request
+  </Step>
+  
+  <Step title="Token polling">
+    The plugin polls the token endpoint until authorization is complete:
+    
+    ```typescript
+    POST {ssoOIDCEndpoint}/token
+    {
+      "clientId": "...",
+      "clientSecret": "...",
+      "deviceCode": "...",
+      "grantType": "urn:ietf:params:oauth:grant-type:device_code"
+    }
+    ```
+    
+    Returns `accessToken`, `refreshToken`, and `expiresIn` upon success.
+  </Step>
+</Steps>
+
+## Common OAuth Errors
+
+### Authorization Pending
+
+If you see this message repeatedly:
+
+```
+Waiting for authorization...
+```
+
+This means the plugin is polling for your approval, but you haven't completed the browser authorization yet.
+
+**Solution**: Complete the authorization in your browser. If the browser didn't open automatically, copy the URL from your terminal and open it manually.
+
+### Access Denied
+
+```
+Error: Authorization was denied by the user.
+```
+
+This occurs when you click "Deny" or "Cancel" in the AWS authorization page.
+
+**Solution**: Restart the authentication process and click "Allow" when prompted:
+
+```bash
+opencode auth login
+```
+
+### Expired Token
+
+```
+Error: Device code has expired. Please restart the authorization process.
+```
+
+Device codes expire after 10 minutes (600 seconds). If you don't complete authorization within this time, you'll need to restart.
+
+**Solution**: Run `opencode auth login` again and complete the authorization more quickly.
+
+### Slow Down
+
+If the plugin polls too frequently, AWS returns a `slow_down` error. The plugin automatically increases the polling interval by 5 seconds when this happens.
+
+**This is normal behavior** and doesn't require user action. The plugin handles it automatically.
+
+## TUI /connect vs opencode auth login
+
+<Warning>
+  If you need to enter provider-specific values for OAuth login (like IAM Identity Center Start URL / region), use `opencode auth login`. The TUI `/connect` flow may not display plugin OAuth prompts.
+</Warning>
+
+### When to use opencode auth login
+
+Use the CLI command when:
+
+- Authenticating with **IAM Identity Center** (requires Start URL and region input)
+- The TUI `/connect` flow isn't prompting for OAuth parameters
+- You need programmatic or scripted authentication
+- You want to specify configuration values upfront
+
+### When to use /connect
+
+Use the TUI command when:
+
+- Authenticating with **AWS Builder ID** (no extra parameters needed)
+- You prefer a visual interface
+- You're already in an OpenCode session
+
+## Token Refresh Issues
+
+After initial authentication, the plugin automatically refreshes expired access tokens using the stored refresh token.
+
+### Refresh token expired
+
+If you see:
+
+```
+Error: Invalid refresh token
+Error: ExpiredTokenException
+```
+
+Your refresh token has expired (typically after 90 days of inactivity) or was revoked.
+
+**Solution**: Re-authenticate from scratch:
+
+```bash
+opencode auth login
+```
+
+The plugin will mark the account as permanently unhealthy and stop using it until you re-authenticate.
+
+### Token expiry buffer
+
+The plugin refreshes tokens **2 minutes before** they expire (configurable via `token_expiry_buffer_ms`). This prevents mid-request token expiration.
+
+From `src/kiro/auth.ts`:
+
+```typescript
+export function accessTokenExpired(auth: KiroAuthDetails, bufferMs = 120000): boolean {
+  if (!auth.access || !auth.expires) return true
+  return Date.now() >= auth.expires - bufferMs
+}
+```
+
+You can adjust this buffer in `~/.config/opencode/kiro.json`:
+
+```json
+{
+  "token_expiry_buffer_ms": 120000
+}
+```
+
+## Region Configuration
+
+The OIDC region (`oidc_region` / `sso_region`) is separate from the API region:
+
+- **OIDC Region**: Where AWS SSO OIDC endpoints are located (e.g., `us-east-1`)
+- **API Region**: Where CodeWhisperer API endpoints are located (e.g., `us-east-1` or `us-west-2`)
+
+### Default behavior
+
+If not specified:
+- OIDC region defaults to `us-east-1`
+- API region defaults to `us-east-1`
+
+### Custom configuration
+
+Set custom regions in `~/.config/opencode/kiro.json`:
+
+```json
+{
+  "idc_region": "us-west-2",
+  "default_region": "us-west-2"
+}
+```
+
+Or specify during authentication:
+
+```bash
+opencode auth login
+```
+
+Enter the OIDC region when prompted.
+
+## Network and Firewall Issues
+
+OAuth flows require outbound HTTPS access to:
+
+- `*.awsapps.com` (for IAM Identity Center)
+- `*.amazonaws.com` (for SSO OIDC and CodeWhisperer APIs)
+- `codewhisperer.{region}.amazonaws.com`
+
+If you're behind a corporate firewall or proxy, ensure these domains are whitelisted.
+
+### Testing connectivity
+
+```bash
+curl -I https://oidc.us-east-1.amazonaws.com
+curl -I https://codewhisperer.us-east-1.amazonaws.com
+```
+
+Both should return `HTTP/1.1 403 Forbidden` or similar (not connection errors).
+
+## Debugging OAuth Issues
+
+Enable detailed API request logging:
+
+```json ~/.config/opencode/kiro.json
+{
+  "enable_log_api_request": true
+}
+```
+
+Then check the logs for OAuth flow details:
+
+```bash
+tail -f ~/.local/share/opencode/logs/opencode.log
+```
+
+Look for entries related to:
+- Client registration (`/client/register`)
+- Device authorization (`/device_authorization`)
+- Token polling (`/token`)
+
+## Related Information
+
+<Accordion title="What credentials does the plugin store?">
+  The plugin stores the following in `~/.config/opencode/kiro.db`:
+  
+  - **Refresh token**: Long-lived token (90 days) for obtaining new access tokens
+  - **Access token**: Short-lived token (1 hour) for API requests
+  - **Client ID / Secret**: OIDC client credentials (for IAM Identity Center only)
+  - **Profile ARN**: Identity Center profile (for IAM Identity Center only)
+  - **Expiration timestamps**: For automatic token refresh
+  
+  Access tokens are refreshed automatically before expiration. Refresh tokens require re-authentication when expired.
+</Accordion>
+
+<Accordion title="Can I reuse tokens across machines?">
+  Technically yes, but it's not recommended. You can copy the `kiro.db` file to another machine, but:
+  
+  - Client credentials are device-specific
+  - Tokens may be revoked if used from multiple locations simultaneously
+  - Security best practices recommend per-device authentication
+  
+  Instead, authenticate each machine separately using `opencode auth login` or `kiro-cli login`.
+</Accordion>
+
+<Accordion title="How do I revoke access?">
+  To revoke the plugin's access to your AWS account:
+  
+  1. Go to AWS IAM Identity Center console
+  2. Navigate to "Access tokens" or "Active sessions"
+  3. Find the "Kiro IDE" client and revoke it
+  
+  Alternatively, delete the local credentials:
+  
+  ```bash
+  rm ~/.config/opencode/kiro.db
+  ```
+  
+  This will force re-authentication on next use.
+</Accordion>
+
+<Accordion title="What if the browser doesn't open automatically?">
+  The plugin attempts to open the verification URL in your default browser. If this fails:
+  
+  1. Copy the URL printed in your terminal
+  2. Manually open it in any browser
+  3. Sign in and authorize the request
+  
+  The plugin will continue polling and detect the authorization automatically once you approve it in the browser.
+</Accordion>

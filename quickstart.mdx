@@ -1,80 +1,277 @@
 ---
 title: "Quickstart"
-description: "Start building awesome documentation in minutes"
+description: "Get started with OpenCode Kiro Auth in under 5 minutes"
 ---
 
-## Get started in three steps
+This guide will walk you through setting up the OpenCode Kiro Auth plugin and making your first API call using Claude models through AWS Kiro.
 
-Get your documentation site running locally and make your first customization.
+## Prerequisites
 
-### Step 1: Set up your local environment
+Before you begin, make sure you have:
 
-<AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
-    
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
-  </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
-    
-    <Tip>Your preview updates automatically as you edit files.</Tip>
-  </Accordion>
-</AccordionGroup>
+- OpenCode installed and configured
+- The `@zhafron/opencode-kiro-auth` plugin installed (see [Installation](/installation))
+- An AWS account (AWS Builder ID or IAM Identity Center)
 
-### Step 2: Deploy your changes
+## Choose Your Authentication Method
 
-<AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
-    
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
-</Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
+Select the authentication method that works best for you:
 
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
-
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
-  </Accordion>
-</AccordionGroup>
-
-### Step 3: Go live
-
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
-</Accordion>
-
-## Next steps
-
-Now that you have your docs running, explore these key features:
-
-<CardGroup cols={2}>
-
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
-</Card>
-
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
-</Card>
-
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
-</Card>
-
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
-</Card>
-
+<CardGroup cols={3}>
+  <Card title="Kiro CLI" icon="terminal" href="#kiro-cli-recommended">
+    Recommended - Automatic session import
+  </Card>
+  <Card title="AWS Builder ID" icon="user" href="#aws-builder-id">
+    Free AWS account authentication
+  </Card>
+  <Card title="IAM Identity Center" icon="building" href="#iam-identity-center">
+    Enterprise SSO authentication
+  </Card>
 </CardGroup>
 
-<Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
-</Note>
+## Kiro CLI (Recommended)
+
+The easiest way to authenticate is using the Kiro CLI, which automatically syncs your credentials.
+
+<Steps>
+  <Step title="Install Kiro CLI">
+    Install the Kiro CLI tool if you haven't already:
+
+    ```bash
+    npm install -g kiro-cli
+    ```
+  </Step>
+
+  <Step title="Login with Kiro CLI">
+    Authenticate using the Kiro CLI:
+
+    ```bash
+    kiro-cli login
+    ```
+
+    Follow the prompts to complete authentication.
+  </Step>
+
+  <Step title="Enable Auto-Sync">
+    Ensure auto-sync is enabled in `~/.config/opencode/kiro.json`:
+
+    ```json
+    {
+      "auto_sync_kiro_cli": true
+    }
+    ```
+
+    <Note>Auto-sync is enabled by default, so you may not need to configure this.</Note>
+  </Step>
+
+  <Step title="Restart OpenCode">
+    Restart OpenCode to trigger the automatic credential sync. The plugin will import your Kiro CLI session on startup.
+  </Step>
+</Steps>
+
+## AWS Builder ID
+
+Authenticate directly using AWS Builder ID (free AWS account).
+
+<Steps>
+  <Step title="Start Authentication">
+    Run the OpenCode authentication command:
+
+    ```bash
+    opencode auth login
+    ```
+  </Step>
+
+  <Step title="Select Provider">
+    When prompted:
+    - Select `Other`
+    - Type `kiro`
+    - Press Enter
+  </Step>
+
+  <Step title="Configure Authentication">
+    You'll be prompted for:
+    - **IAM Identity Center Start URL**: Leave blank for AWS Builder ID
+    - **IAM Identity Center region**: Leave blank (defaults to us-east-1)
+  </Step>
+
+  <Step title="Complete OAuth Flow">
+    A browser window will open to AWS's verification page. If it doesn't open automatically:
+    - Copy the URL displayed in your terminal
+    - Paste it into your browser
+    - Enter the verification code shown in your terminal
+    - Sign in with your AWS Builder ID
+  </Step>
+
+  <Step title="Verify Authentication">
+    Once authenticated, verify your setup:
+
+    ```bash
+    opencode status
+    ```
+
+    You should see `kiro` listed as a connected provider.
+  </Step>
+</Steps>
+
+## IAM Identity Center
+
+Authenticate using your organization's IAM Identity Center (SSO).
+
+<Steps>
+  <Step title="Get Your Start URL">
+    Obtain your organization's IAM Identity Center Start URL from your AWS administrator. It typically looks like:
+
+    ```
+    https://your-company.awsapps.com/start
+    ```
+  </Step>
+
+  <Step title="Start Authentication">
+    Run the OpenCode authentication command:
+
+    ```bash
+    opencode auth login
+    ```
+  </Step>
+
+  <Step title="Select Provider">
+    When prompted:
+    - Select `Other`
+    - Type `kiro`
+    - Press Enter
+  </Step>
+
+  <Step title="Enter Start URL">
+    When prompted:
+    - **IAM Identity Center Start URL**: Enter your organization's Start URL
+    - **IAM Identity Center region**: Enter your SSO region (e.g., `us-east-1`) or leave blank for default
+  </Step>
+
+  <Step title="Complete OAuth Flow">
+    Complete the browser-based authentication flow with your organization's SSO provider.
+  </Step>
+
+  <Step title="Configure Profile ARN (if required)">
+    If you receive a 403 error, you need to configure a profile ARN. Install Kiro CLI and select a profile:
+
+    ```bash
+    npm install -g kiro-cli
+    kiro-cli profile
+    ```
+
+    Select your Q Developer profile from the list. The plugin will auto-detect and use this profile ARN.
+
+    <Info>
+    See the [IAM Identity Center](/auth/iam-identity-center) guide for more details on profile ARN configuration.
+    </Info>
+  </Step>
+</Steps>
+
+## Make Your First Request
+
+Once authenticated, you can start using Claude models through OpenCode.
+
+<Steps>
+  <Step title="Open OpenCode">
+    Launch OpenCode in your project:
+
+    ```bash
+    opencode
+    ```
+  </Step>
+
+  <Step title="Select a Model">
+    Use the model selector to choose a Kiro-backed Claude model, such as:
+    - `claude-sonnet-4-5`
+    - `claude-sonnet-4-6`
+    - `claude-haiku-4-5`
+  </Step>
+
+  <Step title="Send a Test Prompt">
+    Send a simple test prompt to verify everything is working:
+
+    ```
+    Write a Python function that calculates factorial
+    ```
+
+    You should receive a response from Claude through the Kiro API.
+  </Step>
+</Steps>
+
+## Verify Account Status
+
+Check that your account is properly configured and healthy:
+
+<CodeGroup>
+
+```bash Linux/macOS
+sqlite3 ~/.config/opencode/kiro.db "SELECT email, auth_method, is_healthy, used_count, limit_count FROM accounts;"
+```
+
+```bash Windows
+sqlite3 %APPDATA%\opencode\kiro.db "SELECT email, auth_method, is_healthy, used_count, limit_count FROM accounts;"
+```
+
+</CodeGroup>
+
+You should see your account listed with:
+- **is_healthy**: `1`
+- **used_count**: Number of requests made
+- **limit_count**: Your quota limit (typically 550+)
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Configure Models" icon="sliders" href="/guides/model-configuration">
+    Set up Claude models and thinking modes
+  </Card>
+  <Card title="Multi-Account Setup" icon="users" href="/guides/multi-account-setup">
+    Add multiple accounts for rotation
+  </Card>
+  <Card title="Account Strategies" icon="rotate" href="/config/account-strategies">
+    Configure intelligent account rotation
+  </Card>
+  <Card title="Troubleshooting" icon="wrench" href="/troubleshooting/access-denied">
+    Common issues and solutions
+  </Card>
+</CardGroup>
+
+## Common Issues
+
+<AccordionGroup>
+  <Accordion title="No accounts found">
+    If you see "No accounts" error:
+    1. Ensure you've completed authentication
+    2. Check that `auto_sync_kiro_cli` is enabled if using Kiro CLI
+    3. Verify the database file exists at `~/.config/opencode/kiro.db`
+    
+    See the [No Accounts](/troubleshooting/no-accounts) troubleshooting guide for detailed solutions.
+  </Accordion>
+
+  <Accordion title="Access Denied (403)">
+    If using IAM Identity Center and receiving 403 errors:
+    1. Configure profile ARN using `kiro-cli profile`
+    2. Restart OpenCode to sync the profile
+    3. Retry authentication
+
+    See the [Access Denied](/troubleshooting/access-denied) troubleshooting guide.
+  </Accordion>
+
+  <Accordion title="Invalid URL Error">
+    If you see `ERR_INVALID_URL: "undefined/chat/completions"`:
+    1. Check your `~/.local/share/opencode/auth.json` file
+    2. Ensure it has a valid `kiro` entry with `type: "api"` and any value for `key`
+    3. The actual credentials are stored in `kiro.db`, not `auth.json`
+
+    See the [Invalid URL](/troubleshooting/invalid-url) troubleshooting guide.
+  </Accordion>
+</AccordionGroup>
+
+## Need Help?
+
+If you encounter any issues:
+
+- Check the [Troubleshooting](/troubleshooting/access-denied) section
+- Review the [Authentication](/auth/aws-builder-id) guides
+- Open an issue on [GitHub](https://github.com/tickernelz/opencode-kiro-auth/issues)

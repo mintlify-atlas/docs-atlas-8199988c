@@ -1,0 +1,195 @@
+---
+title: "authorizeKiroIDC"
+description: "Initialize AWS IAM Identity Center (IDC) device authorization flow for Kiro authentication"
+---
+
+## Overview
+
+The `authorizeKiroIDC` function initiates the AWS IAM Identity Center (IDC) device authorization flow, which is used to authenticate users via AWS Builder ID or SSO. This function handles the OAuth device code flow by registering a client and obtaining device authorization codes.
+
+## Function Signature
+
+```typescript
+async function authorizeKiroIDC(
+  region?: KiroRegion,
+  startUrl?: string
+): Promise<KiroIDCAuthorization>
+```
+
+## Parameters
+
+<ParamField path="region" type="KiroRegion" optional>
+  The AWS region to use for authentication. If not provided, defaults to `us-east-1`.
+  
+  Valid regions include: `us-east-1`, `us-west-2`, `eu-west-1`, `ap-southeast-1`, and many others. See [KiroRegion type](/api/config/kiro-config#kiroregion) for the complete list.
+</ParamField>
+
+<ParamField path="startUrl" type="string" optional>
+  The SSO start URL for AWS Identity Center. If not provided, defaults to AWS Builder ID start URL: `https://view.awsapps.com/start`.
+</ParamField>
+
+## Return Value
+
+<ResponseField name="KiroIDCAuthorization" type="object">
+  An object containing device authorization details needed to complete the OAuth flow.
+  
+  <ResponseField name="verificationUrl" type="string">
+    The URL where users must navigate to enter the user code
+  </ResponseField>
+  
+  <ResponseField name="verificationUriComplete" type="string">
+    Complete verification URL that pre-fills the user code (recommended for better UX)
+  </ResponseField>
+  
+  <ResponseField name="userCode" type="string">
+    The code users must enter at the verification URL
+  </ResponseField>
+  
+  <ResponseField name="deviceCode" type="string">
+    The device code used for polling the token endpoint
+  </ResponseField>
+  
+  <ResponseField name="clientId" type="string">
+    OAuth client ID generated during registration
+  </ResponseField>
+  
+  <ResponseField name="clientSecret" type="string">
+    OAuth client secret generated during registration
+  </ResponseField>
+  
+  <ResponseField name="interval" type="number">
+    Polling interval in seconds (typically 5 seconds)
+  </ResponseField>
+  
+  <ResponseField name="expiresIn" type="number">
+    Time in seconds until the device code expires (typically 600 seconds)
+  </ResponseField>
+  
+  <ResponseField name="region" type="KiroRegion">
+    The effective AWS region being used
+  </ResponseField>
+  
+  <ResponseField name="startUrl" type="string">
+    The SSO start URL being used
+  </ResponseField>
+</ResponseField>
+
+## Usage Example
+
+```typescript
+import { authorizeKiroIDC } from '@opencode/kiro-auth'
+
+// Basic usage with defaults (us-east-1 region, AWS Builder ID)
+const auth = await authorizeKiroIDC()
+
+console.log(`Please visit: ${auth.verificationUriComplete}`)
+console.log(`Or go to ${auth.verificationUrl} and enter code: ${auth.userCode}`)
+
+// With custom region
+const authEuWest = await authorizeKiroIDC('eu-west-1')
+
+// With custom SSO start URL and region
+const authCustom = await authorizeKiroIDC(
+  'us-west-2',
+  'https://my-org.awsapps.com/start'
+)
+```
+
+## Complete Authentication Flow
+
+```typescript
+import { authorizeKiroIDC } from '@opencode/kiro-auth'
+
+try {
+  // Step 1: Initiate device authorization
+  const auth = await authorizeKiroIDC('us-east-1')
+  
+  // Step 2: Display verification URL to user
+  console.log(`
+    Authenticate with AWS:
+    1. Visit: ${auth.verificationUriComplete}
+    2. Or go to ${auth.verificationUrl} and enter: ${auth.userCode}
+    3. This code expires in ${auth.expiresIn} seconds
+  `)
+  
+  // Step 3: Poll for token (implement using pollKiroIDCToken)
+  // const token = await pollKiroIDCToken(
+  //   auth.clientId,
+  //   auth.clientSecret,
+  //   auth.deviceCode,
+  //   auth.interval,
+  //   auth.expiresIn,
+  //   auth.region
+  // )
+} catch (error) {
+  console.error('Authorization failed:', error.message)
+}
+```
+
+## Error Handling
+
+The function may throw errors in the following scenarios:
+
+<Warning>
+  Always wrap `authorizeKiroIDC` calls in try-catch blocks to handle network errors, service unavailability, or invalid parameters.
+</Warning>
+
+### Common Error Scenarios
+
+- **Client registration failed**: The OAuth client registration with AWS SSO OIDC endpoint failed
+- **Device authorization failed**: The device authorization request failed
+- **Missing required fields**: The API response is missing `clientId`, `clientSecret`, `deviceCode`, or `userCode`
+- **Network errors**: Connection failures to AWS endpoints
+
+```typescript
+try {
+  const auth = await authorizeKiroIDC('us-east-1')
+  // ... handle success
+} catch (error) {
+  if (error.message.includes('Client registration failed')) {
+    // Handle registration failure
+  } else if (error.message.includes('Device authorization failed')) {
+    // Handle device authorization failure
+  } else {
+    // Handle other errors
+  }
+}
+```
+
+## Implementation Details
+
+<Note>
+  This function performs two API calls:
+  1. **Client Registration**: Registers an OAuth client with AWS SSO OIDC
+  2. **Device Authorization**: Obtains device and user codes for the OAuth device flow
+</Note>
+
+The function:
+- Uses the user agent `KiroIDE` for all requests
+- Requests OAuth scopes: `codewhisperer:completions`, `codewhisperer:analysis`, `codewhisperer:conversations`, `codewhisperer:transformations`, `codewhisperer:taskassist`
+- Supports grant types: `urn:ietf:params:oauth:grant-type:device_code` and `refresh_token`
+- Normalizes the region to ensure validity (defaults to `us-east-1` for invalid regions)
+
+## Related Types
+
+### KiroIDCAuthorization
+
+```typescript
+interface KiroIDCAuthorization {
+  verificationUrl: string
+  verificationUriComplete: string
+  userCode: string
+  deviceCode: string
+  clientId: string
+  clientSecret: string
+  interval: number
+  expiresIn: number
+  region: KiroRegion
+  startUrl: string
+}
+```
+
+## See Also
+
+- [KiroConfig](/api/config/kiro-config) - Configuration options for the Kiro Auth plugin
+- [KiroRegion](/api/config/kiro-config#kiroregion) - Supported AWS regions

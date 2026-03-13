@@ -1,0 +1,96 @@
+---
+title: "Access Denied Error"
+description: "Resolve HTTP 403 AccessDeniedException errors when using IAM Identity Center"
+---
+
+If you're encountering a **403 AccessDeniedException** error with the message "User is not authorized", this typically indicates missing IAM Identity Center profile configuration.
+
+## Error Message
+
+```
+Status: 403 (AccessDeniedException / User is not authorized)
+```
+
+This error occurs when using **IAM Identity Center** (custom Start URL) without a properly configured profile ARN. The Q Developer and CodeWhisperer APIs require a `profileArn` parameter for Identity Center authentication.
+
+## Root Cause
+
+The plugin attempts to read the active profile ARN from your local `kiro-cli` database (specifically `state.key = api.codewhisperer.profile`) and sends it as `profileArn` in API requests. If this value is missing or invalid, AWS rejects the request.
+
+## Solution
+
+<Steps>
+  <Step title="Select a profile in Kiro CLI">
+    Run the following command to select a valid profile:
+    
+    ```bash
+    kiro-cli profile
+    ```
+    
+    Select a profile from the list (e.g., `QDevProfile-us-east-1`).
+  </Step>
+  
+  <Step title="Restart authentication">
+    After selecting the profile, retry the authentication process:
+    
+    ```bash
+    opencode auth login
+    ```
+    
+    Or simply restart OpenCode to trigger an automatic re-sync from the `kiro-cli` database.
+  </Step>
+  
+  <Step title="Manual configuration (optional)">
+    If automatic profile detection fails, you can manually set the profile ARN in your configuration file at `~/.config/opencode/kiro.json`:
+    
+    ```json
+    {
+      "idc_profile_arn": "arn:aws:iam::123456789012:role/QDevProfile-us-east-1"
+    }
+    ```
+  </Step>
+</Steps>
+
+## Alternative: Use AWS Builder ID
+
+If you don't need IAM Identity Center, you can authenticate with **AWS Builder ID** instead, which doesn't require a profile ARN:
+
+1. Run `opencode auth login`
+2. Select `Other`, type `kiro`, and press enter
+3. **Leave the Start URL blank** when prompted to use AWS Builder ID
+
+<Info>
+  AWS Builder ID is simpler to configure and doesn't require profile management, making it ideal for individual developers.
+</Info>
+
+## Verification
+
+After completing these steps, verify that the profile ARN is properly configured:
+
+```bash
+kiro-cli profile --show
+```
+
+The active profile should be displayed. If you see your profile ARN, the plugin will automatically use it for API requests.
+
+## Related Information
+
+<Accordion title="What's the difference between IAM Identity Center and AWS Builder ID?">
+  - **AWS Builder ID**: Personal AWS authentication for individual developers. No profile ARN required.
+  - **IAM Identity Center (SSO)**: Enterprise authentication for organizations. Requires a custom Start URL and profile ARN.
+  
+  Most individual users should use AWS Builder ID unless their organization requires IAM Identity Center.
+</Accordion>
+
+<Accordion title="Where does the plugin store profile information?">
+  The plugin reads profile information from two locations:
+  
+  1. **Kiro CLI database**: `~/.local/share/kiro-cli/db.sqlite` (primary source)
+  2. **Plugin config**: `~/.config/opencode/kiro.json` (fallback for `idc_profile_arn`)
+  
+  When `auto_sync_kiro_cli` is enabled (default), the plugin automatically syncs from the Kiro CLI database.
+</Accordion>
+
+<Accordion title="Can I use multiple profiles?">
+  Yes. The plugin supports multiple accounts with different profiles. Each account in the `kiro.db` database can have its own `profile_arn`. The plugin will use the correct profile ARN for each account when making API requests.
+</Accordion>
